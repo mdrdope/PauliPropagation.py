@@ -1,0 +1,6 @@
+qiskit>=2.0
+numpy>=1.24
+
+[dev]
+pytest
+pytest-randomly

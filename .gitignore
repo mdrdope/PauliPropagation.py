@@ -1,0 +1,9 @@
+zpdf/
+
+*.docx
+
+*.nb
+*.nb.html
+
+__pycache__/
+**/__pycache__/
