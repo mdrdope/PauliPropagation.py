@@ -1,0 +1,24 @@
+# Ignore zpdf folders anywhere
+**/zpdf/
+
+# Ignore Wolfram Alpha notebook files
+**/*.nb
+
+# Ignore Word documents
+**/*.docx
+
+# Ignore profiling file or directory named "profiling"
+**/profiling
+**/profiling/
+
+# Ignore egg-info directories
+**/pauli_propagation.egg-info/
+**/pauli_pkg.egg-info/
+
+# Ignore Python cache directories
+**/__pycache__/
+
+# Ignore pytest cache
+**/.pytest_cache/
+
+**/junk.ipynb # Ignore specific junk notebook

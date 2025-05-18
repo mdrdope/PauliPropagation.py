@@ -1,0 +1,33 @@
+[build-system]
+requires = [
+    "setuptools>=68",
+    "wheel",
+]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "pauli-propagation"
+version = "0.1.0"
+description = "Pauli-based back-propagation of observables through noiseless quantum circuits."
+readme = "README.md"
+requires-python = ">=3.10"
+license = { text = "MIT" }
+authors = [
+  { name = "Steven Ma", email = "ym432@cam.ac.uk" }
+]
+dependencies = [
+  "qiskit>=2.0",
+  "numpy>=1.24",
+  "numba>=0.57",
+  "matplotlib>=3.7",
+]
+
+[project.optional-dependencies]
+dev = [
+  "pytest",
+  "pytest-randomly",
+]
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["pauli_propagation*"]
