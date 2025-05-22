@@ -1,7 +1,9 @@
 [build-system]
 requires = [
-    "setuptools>=68",
-    "wheel",
+  "setuptools>=68",
+  "wheel",
+  "Cython>=0.29.21",
+  "numpy>=1.24",
 ]
 build-backend = "setuptools.build_meta"
 
@@ -18,7 +20,6 @@ authors = [
 dependencies = [
   "qiskit>=2.0",
   "numpy>=1.24",
-  "numba>=0.57",
   "matplotlib>=3.7",
 ]
 
@@ -26,6 +27,7 @@ dependencies = [
 dev = [
   "pytest",
   "pytest-randomly",
+  "Cython>=0.29.21",
 ]
 
 [tool.setuptools.packages.find]

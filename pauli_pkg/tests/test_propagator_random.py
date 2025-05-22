@@ -11,11 +11,11 @@ SYMS_STATE = "01+-rl"
 SYMS_PAULI = "IXYZ"
 
 def random_state_label(n):
-    """Generate a random product‐state label of length n."""
+    """Generate a random product state label of length n."""
     return "".join(random.choice(SYMS_STATE) for _ in range(n))
 
 def random_pauli_label(n):
-    """Generate a random non‐identity Pauli label of length n."""
+    """Generate a random non-identity Pauli label of length n."""
     lbl = "".join(random.choice(SYMS_PAULI) for _ in range(n))
     if set(lbl) == {"I"}:
         pos = random.randrange(n)

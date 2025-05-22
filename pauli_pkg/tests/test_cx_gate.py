@@ -19,7 +19,7 @@ def cx_matrix(ctrl: int, tgt: int) -> np.ndarray:
     return Operator(qc).data
 
 def sum_paths_from_kernel(out, n: int) -> np.ndarray:
-    """Reconstruct ∑ αᵢ Pᵢ from the bit-kernel output 5-tuple."""
+    """Reconstruct sum(alpha_j * P_j) from the bit-kernel output 5-tuple."""
     L, c1, k1, c2, k2 = out
     # first term
     mat = c1 * Pauli(decode_pauli(k1, n).to_label()).to_matrix()

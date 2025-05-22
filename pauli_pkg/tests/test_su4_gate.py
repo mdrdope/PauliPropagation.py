@@ -13,7 +13,7 @@ from pauli_propagation             import PauliPropagator
 LABELS_2Q = ["".join(p) for p in itertools.product("IXYZ", repeat=2)]
 
 def pauli_to_matrix(label: str) -> np.ndarray:
-    """2-qubit Pauli label → 4×4 matrix (big-endian)."""
+    """2-qubit Pauli label -> 4x4 matrix (big-endian)."""
     SINGLE = {
         "I": np.eye(2, dtype=complex),
         "X": np.array([[0, 1], [1, 0]], dtype=complex),
@@ -23,7 +23,7 @@ def pauli_to_matrix(label: str) -> np.ndarray:
     return np.kron(SINGLE[label[0]], SINGLE[label[1]])
 
 def series_to_matrix(series):
-    """Sum α·P over a list of PauliTerm, using term.to_label()."""
+    """Sum alpha*P over a list of PauliTerm, using term.to_label()."""
     acc = np.zeros((4, 4), dtype=complex)
     for term in series:
         mat = pauli_to_matrix(term.to_label())
@@ -52,7 +52,7 @@ def test_random_su4_conjugation(trial):
     # 4) Back-propagate and get the output series
     series = PauliPropagator(qc).propagate(pt, max_weight=None)[-1]
 
-    # 5) Compare matrices: U† P U vs ∑ α_i P_i
+    # 5) Compare matrices: U^dagger P U vs sum alpha_i P_i
     lhs = U.conj().T @ pauli_to_matrix(label) @ U
     rhs = series_to_matrix(series)
 

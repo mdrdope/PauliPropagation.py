@@ -8,4 +8,5 @@ pytest
 tqdm
 ipywidgets
 numba
+cython
 设�?�量子电�??代码的时候�?�把job id存下到json里面，然后再�??

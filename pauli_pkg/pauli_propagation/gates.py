@@ -1,106 +1,295 @@
-import numpy as np
-from numba import njit, int64, complex128
-from typing import Tuple, Dict, Callable
+# -*- coding: utf-8 -*-
 
-# ─── QuantumGate registry ───────────────────────────────────────
+# pauli_pkg/pauli_propagation/gates.py
+"""
+Quantum gate implementations for Pauli propagation.
+
+This module provides implementations of various quantum gates and their Pauli propagation rules.
+The gates are registered in the QuantumGate class registry and can be accessed by name.
+
+Notes
+-----
+- All gates implement Pauli propagation rules that transform Pauli operators
+- The implementation uses bit manipulation for efficient Pauli operator representation
+- Complex coefficients are handled throughout the propagation
+"""
+
+import numpy as np
+np.dtype(np.float64)  
+from typing import Tuple, Dict, Callable, Optional
+from functools import lru_cache
+dtype=np.float64
+# try:
+#     from .su4_gate_cy import su4_gate_cy as su4_gate
+#     print("Using Cython SU4")
+# except ImportError:
+#     from .gates import su4_gate  
+#     print("Cython SU4 not available, falling back")
+
+
+
 class QuantumGate:
-    """Stores Numba kernels keyed by gate name."""
+    """
+    Registry for quantum gate implementations.
+    
+    This class maintains a registry of quantum gate implementations that can be
+    accessed by name. Each gate implementation must follow the standard interface
+    for Pauli propagation.
+    
+    Attributes
+    ----------
+    _registry : Dict[str, Callable]
+        Dictionary mapping gate names to their implementation functions.
+    """
     _registry: Dict[str, Callable] = {}
+    _cache: Dict[str, Callable] = {}  # Cache for faster lookup
 
     @classmethod
     def get(cls, name: str) -> Callable:
+        """
+        Get the implementation for a named gate.
+        
+        Parameters
+        ----------
+        name : str
+            Name of the gate to retrieve.
+            
+        Returns
+        -------
+        Callable
+            The gate implementation function.
+            
+        Raises
+        ------
+        NotImplementedError
+            If no implementation exists for the requested gate.
+        """
+        # Check cache first for faster lookup
+        if name in cls._cache:
+            return cls._cache[name]
+            
+        # If not in cache, check registry
         if name not in cls._registry:
             raise NotImplementedError(f"No rule for gate '{name}'")
-        return cls._registry[name]
+            
+        # Add to cache and return
+        cls._cache[name] = cls._registry[name]
+        return cls._cache[name]
 
-# ─── CX & T kernels (返回 (L,c1,k1,c2,k2) 紧凑 5-tuple) ──────────
-@njit(cache=True)
-def _cx_bits_nb(coeff: complex128, key: int64, n: int64,
-                ctrl: int64, tgt: int64) -> Tuple[int64,
-                                                  complex128, int64,
-                                                  complex128, int64]:
+
+def cx_gate(coeff: complex, key: int, n: int,
+              ctrl: int, tgt: int) -> Tuple[int, complex, int, complex, int]:
+    """
+    Implement CNOT gate Pauli propagation.
+    
+    Parameters
+    ----------
+    coeff : complex
+        Input coefficient
+    key : int
+        Pauli operator key
+    n : int
+        Number of qubits
+    ctrl : int
+        Control qubit index
+    tgt : int
+        Target qubit index
+        
+    Returns
+    -------
+    Tuple[int, complex, int, complex, int]
+        Number of terms, coefficient, output key, unused coefficient, unused key
+    """
+    # Extract X and Z bits for control and target qubits
     x_c = (key >>  ctrl)     & 1
     z_c = (key >> (n+ctrl))  & 1
     x_t = (key >>  tgt)      & 1
     z_t = (key >> (n+tgt))   & 1
+    
+    # Compute phase factor
     minus = x_c & z_t & (1 ^ (x_t ^ z_c))
     phase = -1 if minus else +1
-    x_tn  = x_t ^ x_c
-    z_cn  = z_c ^ z_t
-    outk  = key
+    
+    # Compute new X and Z bits
+    x_tn = x_t ^ x_c
+    z_cn = z_c ^ z_t
+    
+    # Update key with new bits
+    outk = key
     if x_tn != x_t: outk ^= 1 << tgt
     if z_cn != z_c: outk ^= 1 << (n+ctrl)
+    
     return 1, coeff * phase, outk, 0j, 0
 
 
-@njit(cache=True)
-def _t_bits_nb(coeff: complex128, key: int64, n: int64, q: int64)\
-        -> Tuple[int64, complex128, int64, complex128, int64]:
+def t_gate(coeff: complex, key: int, n: int, q: int) -> Tuple[int, complex, int, complex, int]:
+    """
+    Implement T gate Pauli propagation.
+    
+    Parameters
+    ----------
+    coeff : complex
+        Input coefficient
+    key : int
+        Pauli operator key
+    n : int
+        Number of qubits
+    q : int
+        Target qubit index
+        
+    Returns
+    -------
+    Tuple[int, complex, int, complex, int]
+        Number of terms, coefficient, output key, second coefficient, second key
+    """
+    # Extract X and Z bits for target qubit
     x = (key >>  q)     & 1
     z = (key >> (n+q))  & 1
+    
+    # Z or I Pauli: no change
     if (z and not x) or (not x and not z):
         return 1, coeff, key, 0j, 0
-    key2 = key ^ (1 << (n+q))
-    c1   = coeff / np.sqrt(2)
-    c2   = +c1 if z else -c1
+        
+    # X or Y Pauli: splits into two terms
+    key2 = key ^ (1 << (n+q))  # Flip Z bit
+    c1 = coeff / np.sqrt(2)
+    c2 = +c1 if z else -c1
+    
     return 2, c1, key, c2, key2
 
-# ─── SU(4) kernel (返回 (L, coeff_arr, key_arr)) ─────────────────
-# pre-compute 2-qubit Pauli stack
+
+# Pre-compute 2-qubit Pauli matrices (improves SU4 performance)
 _SINGLE_P = (
-    np.eye(2, dtype=np.complex128),
-    np.array([[0,1],[1,0]],      dtype=np.complex128),
-    np.array([[0,-1j],[1j,0]],   dtype=np.complex128),
-    np.array([[1,0],[0,-1]],     dtype=np.complex128),
+    np.eye(2, dtype=complex),
+    np.array([[0,1],[1,0]],      dtype=complex),
+    np.array([[0,-1j],[1j,0]],   dtype=complex),
+    np.array([[1,0],[0,-1]],     dtype=complex),
 )
 _P_STACK = np.stack([np.kron(_SINGLE_P[q2], _SINGLE_P[q1])
                      for q2 in range(4) for q1 in range(4)])
 
-@njit(cache=True)
-def _code_from_bits(z: int64, x: int64) -> int64:
+# Precompute bit operations
+_CODE_TO_BITS = [(0,0), (0,1), (1,1), (1,0)]
+
+def _code_from_bits(z: int, x: int) -> int:
+    """
+    Convert Z and X bits to Pauli code.
+    
+    Parameters
+    ----------
+    z : int
+        Z bit
+    x : int
+        X bit
+        
+    Returns
+    -------
+    int
+        Pauli code (0=I, 1=X, 2=Y, 3=Z)
+    """
     return (z << 1) | x if z == 0 else (2 | (x ^ 1))
 
-@njit(cache=True)
-def _bits_from_code(c: int64) -> Tuple[int64,int64]:
-    if c==0:   return 0,0
-    if c==1:   return 0,1
-    if c==2:   return 1,1
-    return 1,0
+def _bits_from_code(c: int) -> Tuple[int, int]:
+    """
+    Convert Pauli code to Z and X bits.
+    
+    Parameters
+    ----------
+    c : int
+        Pauli code (0=I, 1=X, 2=Y, 3=Z)
+        
+    Returns
+    -------
+    Tuple[int, int]
+        Z and X bits
+    """
+    return _CODE_TO_BITS[c]
 
-@njit(cache=True)
-def _su4_bits_nb(coeff: complex128, key: int64, n: int64,
-                 q1: int64, q2: int64, mat: np.ndarray):
-    x1 = (key >>  q1)     & 1;  z1 = (key >> (n+q1)) & 1
-    x2 = (key >>  q2)     & 1;  z2 = (key >> (n+q2)) & 1
+def su4_gate(coeff: complex, key: int, n: int,
+              q1: int, q2: int, mat: np.ndarray):
+    """
+    Implement arbitrary 2-qubit gate Pauli propagation.
+    
+    Parameters
+    ----------
+    coeff : complex
+        Input coefficient
+    key : int
+        Pauli operator key
+    n : int
+        Number of qubits
+    q1 : int
+        First qubit index
+    q2 : int
+        Second qubit index
+    mat : np.ndarray
+        4x4 unitary matrix
+        
+    Returns
+    -------
+    Tuple[int, np.ndarray, np.ndarray]
+        Number of terms, coefficients, output keys
+    """
+    # Extract X and Z bits for both qubits
+    x1 = (key >>  q1)     & 1
+    z1 = (key >> (n+q1))  & 1
+    x2 = (key >>  q2)     & 1
+    z2 = (key >> (n+q2))  & 1
+    
+    # Calculate index into Pauli basis
     beta_idx = 4*_code_from_bits(z2,x2) + _code_from_bits(z1,x1)
 
-    conj   = mat.conj().T @ _P_STACK[beta_idx] @ mat
-    coeffs = 0.25 * np.array([np.trace(_P_STACK[i].conj().T @ conj)
-                              for i in range(16)], dtype=np.complex128)
+    # Conjugate with unitary matrix
+    conj = mat.conj().T @ _P_STACK[beta_idx] @ mat
+    
+    # Calculate coefficients in Pauli basis
+    coeffs = 0.25 * np.einsum('aij,ij->a', _P_STACK.conj(), conj)
 
-    coeff_out = np.empty(16, dtype=np.complex128)
-    key_out   = np.empty(16, dtype=np.int64)
+    # Prepare output arrays
+    coeff_out = np.empty(16, dtype=complex)
+    key_out = np.empty(16, dtype=object)  # Use object dtype for arbitrary large integers
     L = 0
-    for alpha in range(16):
-        c = coeff * coeffs[alpha]
-        if abs(c.real)+abs(c.imag) < 1e-12:
-            continue
+
+    c_arr = coeff * coeffs                       # vectorized compute of all 16 c values
+    mask = (np.abs(c_arr.real) + np.abs(c_arr.imag)) >= 1e-12
+    significant_idxs = np.nonzero(mask)[0]       # only non-negligible indices
+
+    L = 0
+    for alpha in significant_idxs:
+        c = c_arr[alpha]
         code2a, code1a = divmod(alpha, 4)
         new_key = key
-        for q, code in ((q1, code1a), (q2, code2a)):
-            z,x = _bits_from_code(code)
-            if ((new_key >>  q) & 1)     != x: new_key ^= 1 <<  q
-            if ((new_key >> (n+q)) & 1) != z: new_key ^= 1 << (n+q)
-        coeff_out[L] = c;  key_out[L] = new_key;  L += 1
+        # apply bit flips for q1
+        z1, x1 = _bits_from_code(code1a)
+        if ((new_key >> q1) & 1) != x1:
+            new_key ^= 1 << q1
+        if ((new_key >> (n+q1)) & 1) != z1:
+            new_key ^= 1 << (n+q1)
+        # apply bit flips for q2
+        z2, x2 = _bits_from_code(code2a)
+        if ((new_key >> q2) & 1) != x2:
+            new_key ^= 1 << q2
+        if ((new_key >> (n+q2)) & 1) != z2:
+            new_key ^= 1 << (n+q2)
+
+        coeff_out[L] = c
+        key_out[L]   = new_key
+        L += 1
+
+        coeff_out = coeff_out.real
+
     return L, coeff_out[:L], key_out[:L]
 
-# ─── register to QuantumGate ───────────────────────────────────────────
+
+
+# Register gates with QuantumGate class
 QuantumGate._registry.update({
-    "cx" : _cx_bits_nb,
-    "t"  : _t_bits_nb,
-    "su4": _su4_bits_nb,
+    "cx" : cx_gate,
+    "t"  : t_gate,
+    "su4": su4_gate,
 })
 
-setattr(QuantumGate, "CXgate",  staticmethod(_cx_bits_nb))
-setattr(QuantumGate, "Tgate",   staticmethod(_t_bits_nb))
-setattr(QuantumGate, "SU4gate", staticmethod(_su4_bits_nb))
+# Add static methods for direct access
+setattr(QuantumGate, "CXgate",  staticmethod(cx_gate))
+setattr(QuantumGate, "Tgate",   staticmethod(t_gate))
+setattr(QuantumGate, "SU4gate", staticmethod(su4_gate))

@@ -1,5 +1,6 @@
-# pauli_pkg/pauli_propagation/__init__.py
+# -*- coding: utf-8 -*-
 
+# pauli_pkg/pauli_propagation/__init__.py
 """
 Pauli Propagation Package
 
