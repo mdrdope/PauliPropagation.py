@@ -1,3 +1,5 @@
+# -*- coding: utf-8 -*-
+
 import itertools
 import numpy as np
 import pytest
@@ -13,7 +15,7 @@ from pauli_propagation             import PauliPropagator
 LABELS_2Q = ["".join(p) for p in itertools.product("IXYZ", repeat=2)]
 
 def pauli_to_matrix(label: str) -> np.ndarray:
-    """2-qubit Pauli label -> 4x4 matrix (big-endian)."""
+    """Convert 2-qubit Pauli label to 4x4 matrix (big-endian)."""
     SINGLE = {
         "I": np.eye(2, dtype=complex),
         "X": np.array([[0, 1], [1, 0]], dtype=complex),
@@ -35,21 +37,22 @@ TOL    = 1e-12
 
 @pytest.mark.parametrize("trial", range(TRIALS))
 def test_random_su4_conjugation(trial):
-    # 1) Haar-random SU(4) on qubits [0,1]
+    """Test random SU4 gate conjugation against matrix calculation."""
+    # 1) Generate Haar-random SU(4) matrix for qubits [0,1]
     U    = random_su4()
     gate = UnitaryGate(U, label="randSU4")
     gate._name = "su4"
 
-    # 2) Build a 2-qubit circuit with that SU(4)
+    # 2) Build a 2-qubit circuit with that SU(4) gate
     qc = QuantumCircuit(2)
     qc.append(gate, [0, 1])
 
-    # 3) Pick a random input Pauli
+    # 3) Pick a random input Pauli operator
     label = np.random.choice(LABELS_2Q)
     key   = encode_pauli(Pauli(label))
     pt    = PauliTerm(1.0, key, 2)
 
-    # 4) Back-propagate and get the output series
+    # 4) Back-propagate through circuit and get the output series
     series = PauliPropagator(qc).propagate(pt, max_weight=None)[-1]
 
     # 5) Compare matrices: U^dagger P U vs sum alpha_i P_i

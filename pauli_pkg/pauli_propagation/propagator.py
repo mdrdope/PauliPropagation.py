@@ -2,9 +2,8 @@
 
 # pauli_pkg/pauli_propagation/propagator.py
 import numpy as np
-from typing import List, Dict, Tuple, Set
+from typing import List, Dict
 from qiskit import QuantumCircuit
-import math
 from .pauli_term  import PauliTerm
 from .utils       import weight_of_key
 from .gates       import QuantumGate
@@ -16,41 +15,44 @@ from concurrent.futures import ProcessPoolExecutor, as_completed
 _PARALLEL_THRESHOLD = 2000
 _MAX_WORKERS = 8  # or os.cpu_count()
 
-def _apply_rule(args):
+
+def _apply_gate_kernel_batch(args):
     """
-    Helper function for ProcessPoolExecutor to apply a single gate rule and flatten its output.
-    
-    This function processes a single gate application and formats its output into a standardized
-    list of (key, coefficient) pairs.
+    Helper function for ProcessPoolExecutor to apply gates to a batch of terms.
+    Uses a clean, universal approach that works with any gate type.
     
     Parameters
     ----------
     args : tuple
-        Contains (rule, coeff_in, key_in, n, qidx, extra_args)
-        - rule: Gate rule function to apply
-        - coeff_in: Input coefficient
-        - key_in: Input Pauli key
-        - n: Number of qubits
-        - qidx: Qubit indices
-        - extra_args: Additional arguments for the gate
+        Contains (terms_data, gate_name, qidx, extra_args)
+        where terms_data is a list of (coeff, key, n) tuples
         
     Returns
     -------
-    List[Tuple[int, complex]]
-        List of (key, coefficient) pairs representing the gate output
+    List[Tuple[complex, int, int]]
+        List of (coefficient, key, n) tuples representing output terms
     """
-    rule, coeff_in, key_in, n, qidx, extra_args = args
-    out = rule(coeff_in, key_in, n, *qidx, *extra_args)
-    # Handle CX/T gate outputs (format: L, c1, k1, c2, k2)
-    if len(out) == 5:
-        L, c1, k1, c2, k2 = out
-        if L == 1:
-            return [(int(k1), c1)]
+    terms_data, gate_name, qidx, extra_args = args
+    
+    # Get the gate function
+    gate_func = QuantumGate.get(gate_name)
+    
+    results = []
+    for coeff, key, n in terms_data:
+        # Create input PauliTerm
+        input_term = PauliTerm(coeff, key, n)
+        
+        # Apply gate (all gates now return List[PauliTerm])
+        if extra_args:
+            output_terms = gate_func(input_term, *qidx, *extra_args)
         else:
-            return [(int(k1), c1), (int(k2), c2)]
-    # Handle SU4 gate outputs (format: L, coeffs, keys)
-    L, coeffs, keys = out
-    return [(int(keys[i]), coeffs[i]) for i in range(L)]
+            output_terms = gate_func(input_term, *qidx)
+        
+        # Convert back to tuple format for efficiency
+        for term in output_terms:
+            results.append((term.coeff, term.key, term.n))
+    
+    return results
 
 
 class PauliPropagator:
@@ -89,9 +91,6 @@ class PauliPropagator:
                      exp_table: np.ndarray) -> float:
         """
         Calculate expectation value for a set of Pauli terms.
-        
-        This method efficiently computes the expectation value of a sum of Pauli terms
-        using pre-computed lookup tables and bit-mask operations.
         
         Parameters
         ----------
@@ -157,8 +156,8 @@ class PauliPropagator:
         Propagate a Pauli observable through the circuit.
         
         This method performs exact propagation of a Pauli observable through the circuit,
-        discarding imaginary parts by using only real coefficients. It supports parallel
-        processing for large circuits and weight-based filtering.
+        using high-performance internal kernels. It supports parallel processing for 
+        large circuits and weight-based filtering.
         
         Parameters
         ----------
@@ -179,48 +178,67 @@ class PauliPropagator:
         if observable.n != self.n:
             raise ValueError("Observable qubit count mismatch")
 
-        # Initialize with real coefficient
-        paths: Dict[int, float] = {observable.key: float(observable.coeff.real)}
-        history: List[List[PauliTerm]] = [[PauliTerm(paths[observable.key], observable.key, self.n)]]
+        # Use internal representation for performance: (coeff, key, n)
+        current_terms_data = [(observable.coeff, observable.key, observable.n)]
+        history: List[List[PauliTerm]] = [[observable]]
 
         # Prepare reverse circuit operations
         ops = []
         for instr in reversed(self.qc.data):
-            rule = QuantumGate.get(instr.operation.name)
+            gate_name = instr.operation.name
             qidx = tuple(self.q2i[q] for q in instr.qubits)
             extra = ()
-            if instr.operation.name == "su4" and hasattr(instr.operation, "to_matrix"):
+            if gate_name == "su4" and hasattr(instr.operation, "to_matrix"):
                 extra = (instr.operation.to_matrix(),)
-            ops.append((rule, qidx, extra))
+            ops.append((gate_name, qidx, extra))
 
         # Set up parallel processing if requested
         executor = ProcessPoolExecutor(max_workers=_MAX_WORKERS) if use_parallel else None
         try:
-            for rule, qidx, extra_args in tqdm(ops, desc="Propagating", total=len(ops)):
-                next_paths: Dict[int, float] = {}
-                items = [(rule, coeff, key, self.n, qidx, extra_args) for key, coeff in paths.items()]
-
-                # Choose between parallel and sequential processing
-                if use_parallel and len(items) > _PARALLEL_THRESHOLD:
-                    chunksize = max(1, len(items) // _MAX_WORKERS)
-                    results_iter = executor.map(_apply_rule, items, chunksize=chunksize)
+            for gate_name, qidx, extra_args in tqdm(ops, desc="Propagating", total=len(ops)):
+                
+                # For small numbers of terms or if parallel is disabled, process sequentially
+                if not use_parallel or len(current_terms_data) < _PARALLEL_THRESHOLD:
+                    next_terms_data = _apply_gate_kernel_batch((current_terms_data, gate_name, qidx, extra_args))
                 else:
-                    results_iter = map(_apply_rule, items)
+                    # Split terms into chunks for parallel processing
+                    chunk_size = max(1, len(current_terms_data) // _MAX_WORKERS)
+                    chunks = [current_terms_data[i:i+chunk_size] 
+                            for i in range(0, len(current_terms_data), chunk_size)]
+                    
+                    # Process chunks in parallel
+                    future_to_chunk = {
+                        executor.submit(_apply_gate_kernel_batch, (chunk, gate_name, qidx, extra_args)): chunk 
+                        for chunk in chunks
+                    }
+                    
+                    next_terms_data = []
+                    for future in as_completed(future_to_chunk):
+                        chunk_results = future.result()
+                        next_terms_data.extend(chunk_results)
 
-                # Process results and update paths
-                for term_list in results_iter:
-                    for k2, c2 in term_list:
-                        c2_real = c2.real
-                        # Apply filters
-                        if max_weight is not None and weight_of_key(k2, self.n) > max_weight:
-                            continue
-                        if abs(c2_real) <= tol:
-                            continue
-                        next_paths[k2] = next_paths.get(k2, 0.0) + c2_real
+                # Combine terms with same keys and apply filters
+                key_to_coeff: Dict[int, complex] = {}
+                
+                for coeff, key, n in next_terms_data:
+                    # Apply filters
+                    if max_weight is not None and weight_of_key(key, self.n) > max_weight:
+                        continue
+                    if abs(coeff.real) <= tol and abs(coeff.imag) <= tol:
+                        continue
+                    
+                    # Combine terms with same keys
+                    key_to_coeff[key] = key_to_coeff.get(key, 0.0) + coeff
 
-                # Prepare for next layer
-                paths = {k: c for k, c in next_paths.items() if abs(c) > tol}
-                history.append([PauliTerm(c, k, self.n) for k, c in paths.items()])
+                # Filter out small coefficients and create new term list
+                current_terms_data = []
+                current_terms_objects = []
+                for key, coeff in key_to_coeff.items():
+                    if abs(coeff.real) > tol or abs(coeff.imag) > tol:
+                        current_terms_data.append((coeff, key, self.n))
+                        current_terms_objects.append(PauliTerm(coeff, key, self.n))
+
+                history.append(current_terms_objects)
 
         finally:
             if executor:
@@ -260,7 +278,7 @@ class PauliPropagator:
         # Pre-allocate arrays for vectorized operations
         m = len(pauli_sum)
         coeffs = np.empty(m, dtype=complex)
-        keys = np.empty(m, dtype=object)
+        keys = np.empty(m, dtype=object)  
         
         # Fill arrays
         for i, term in enumerate(pauli_sum):
@@ -271,163 +289,3 @@ class PauliPropagator:
         return float(self._expect_keys(coeffs, keys,
                                      state_idxs, self.n,
                                      self._EXP_TABLE))
-
-
-    def sample_pauli_path(self, observable: PauliTerm, M: int):
-        """
-        Perform M full-depth samplings for the given observable and return complete propagation paths.
-        
-        Algorithm description:
-        For m=1 to M repeat:
-        1. Initialize s_j = Observable, c_j = 1, w_j = |s_j|
-        2. For each layer j (from last to first):
-           a. Expand U_j† s_j = ∑ a_j,i P_j,i
-           b. Sample an index i_j according to Pr[i] ∝ |a_j,i|²
-           c. Update s_(j-1) = P_j,i_j, c_(j-1) = c_j × a_j,i_j, w_(j-1) = |s_(j-1)|
-        3. Record complete path {(s_j, c_j, w_j)} from initial to final state
-        
-        Parameters
-        ----------
-        observable : PauliTerm
-            Initial observable
-        M : int
-            Number of samples
-            
-        Returns
-        -------
-        List[List[PauliTerm]]
-            List of M sampling paths, each containing complete PauliTerm sequence
-        """
-        if observable.n != self.n:
-            raise ValueError("Observable qubit count mismatch")
-
-        # Prepare reverse operation list (from last layer to first)
-        ops = []
-        for instr in reversed(self.qc.data):
-            rule = QuantumGate.get(instr.operation.name)
-            qidx = tuple(self.q2i[q] for q in instr.qubits)
-            extra = ()
-            if instr.operation.name == "su4" and hasattr(instr.operation, "to_matrix"):
-                extra = (instr.operation.to_matrix(),)
-            ops.append((rule, qidx, extra))
-
-        # Sample for each sample
-        all_samples = []
-        for _ in range(M):
-            # Initialize: s_j = Observable, c_j = 1, w_j = |s_j|
-            path = []
-            current_key = observable.key
-            current_coeff = float(observable.coeff.real)  # Keep only real part
-            current_weight = weight_of_key(current_key, self.n)
-            
-            # Record initial state
-            path.append(PauliTerm(current_coeff, current_key, self.n))
-            
-            # Sample for each layer
-            for i, (rule, qidx, extra_args) in enumerate(ops):
-                # Expand U_j† s_j = ∑ a_j,i P_j,i
-                out = rule(current_coeff, current_key, self.n, *qidx, *extra_args)
-                
-                # Process output format, get expansion terms
-                branches = []
-                if len(out) == 5:  # CX/T format
-                    L, c1, k1, c2, k2 = out
-                    if L == 1:
-                        branches = [(int(k1), c1)]
-                    else:
-                        branches = [(int(k1), c1), (int(k2), c2)]
-                else:  # SU4 format
-                    L, coeffs, keys = out
-                    if L > 0:
-                        branches = [(int(keys[i]), coeffs[i]) for i in range(L)]
-                
-                # If no branches, keep current state unchanged
-                if not branches:
-                    # Add same state
-                    path.append(PauliTerm(current_coeff, current_key, self.n))
-                    continue
-                
-                # Calculate sampling probabilities Pr[i] ∝ |a_j,i|²
-                probs = np.array([abs(c)**2 for (_, c) in branches], float)
-                if probs.sum() == 0:
-                    # Handle case where probability sum is 0 (floating point precision issue)
-                    probs = np.ones(len(branches)) / len(branches)
-                else:
-                    probs /= probs.sum()
-                
-                idx = np.random.choice(len(branches), p=probs) # Sample an index i_j according to probability
-                
-                # Update state: s_(j-1) = P_j,i_j, c_(j-1) = c_j × a_j,i_j, w_(j-1) = |s_(j-1)|
-                current_key, amp = branches[idx]
-                current_coeff = float((current_coeff * amp).real)  # Keep only real part
-                current_weight = weight_of_key(current_key, self.n)
-                
-                # Record current state
-                path.append(PauliTerm(current_coeff, current_key, self.n))
-            
-            # Add complete path to sample collection
-            all_samples.append(path)
-        
-        return all_samples
-
-    # def sample_pauli_path(self,
-    #                       observable: PauliTerm,
-    #                       M: int
-    #                      ) -> List[List[PauliTerm]]:
-    #     """
-    #     Perform M full-depth Monte Carlo Pauli-path samples (no truncation).
-    #     Returns a list of M paths; each path is a list of 5 PauliTerm objects
-    #     for layers j=4,3,2,1,0.
-    #     """
-    #     # 1) 构建反向操作序列
-    #     ops = []
-    #     for instr in reversed(self.qc.data):
-    #         rule = QuantumGate.get(instr.operation.name)
-    #         qidx = tuple(self.q2i[q] for q in instr.qubits)
-    #         extra = ()
-    #         if instr.operation.name == "su4" and hasattr(instr.operation, "to_matrix"):
-    #             extra = (instr.operation.to_matrix(),)
-    #         ops.append((rule, qidx, extra))
-
-    #     all_paths: List[List[PauliTerm]] = []
-    #     for _ in range(M):
-    #         path: List[PauliTerm] = []
-
-    #         # 初始层 j=4：PauliTerm(coeff, key, n)
-    #         init_c = observable.coeff.real
-    #         # 对数＆相位跟踪
-    #         log_abs = math.log(abs(init_c))
-    #         phase   = observable.coeff / init_c  # unit-modulus complex
-    #         key     = observable.key
-    #         # 重建成浮点系数
-    #         coeff   = phase * math.exp(log_abs)
-    #         path.append(PauliTerm(coeff, key, self.n))
-
-    #         # 2) 逐层回退
-    #         for (rule, qidx, extra) in ops:
-    #             # 始终传入 coeff=1.0，让 _apply_rule 只返回单层分支系数 a_{j,i}
-    #             branches = _apply_rule((rule, 1.0, key, self.n, qidx, extra))
-    #             # branches: List of (key2, a_j_i)
-
-    #             # 计算采样概率 ∝ |a|^2
-    #             amps  = np.array([c2 for (_k2, c2) in branches], complex)
-    #             probs = np.abs(amps)**2
-    #             s     = probs.sum()
-    #             # ? do we have to divided, can we just sample based on an unnormalized probability dist?
-    #             probs = probs/s if s>0 else np.ones_like(probs)/len(probs) 
-
-    #             # 抽一个分支
-    #             idx = np.random.choice(len(branches), p=probs)
-    #             key, a = branches[idx]
-
-    #             # 更新 log_abs, phase
-    #             log_abs += math.log(abs(a))
-    #             phase   *= (a/abs(a))
-
-    #             # 重建系数并记录
-    #             coeff = phase * math.exp(log_abs)
-    #             path.append(PauliTerm(coeff, key, self.n))
-
-    #         all_paths.append(path)
-
-    #     return all_paths

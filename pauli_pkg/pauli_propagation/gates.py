@@ -12,21 +12,19 @@ Notes
 - All gates implement Pauli propagation rules that transform Pauli operators
 - The implementation uses bit manipulation for efficient Pauli operator representation
 - Complex coefficients are handled throughout the propagation
+- All gates return List[PauliTerm] for consistency
 """
 
 import numpy as np
 np.dtype(np.float64)  
-from typing import Tuple, Dict, Callable, Optional
-from functools import lru_cache
+from .pauli_term import PauliTerm
+from typing import Tuple, Dict, Callable, List
+
 dtype=np.float64
-# try:
-#     from .su4_gate_cy import su4_gate_cy as su4_gate
-#     print("Using Cython SU4")
-# except ImportError:
-#     from .gates import su4_gate  
-#     print("Cython SU4 not available, falling back")
 
-
+# Precompute constants to avoid repeated calculations
+_SQRT2_INV = 1.0 / np.sqrt(2)
+_TOLERANCE = 1e-28
 
 class QuantumGate:
     """
@@ -34,7 +32,7 @@ class QuantumGate:
     
     This class maintains a registry of quantum gate implementations that can be
     accessed by name. Each gate implementation must follow the standard interface
-    for Pauli propagation.
+    for Pauli propagation using PauliTerm objects.
     
     Attributes
     ----------
@@ -77,19 +75,14 @@ class QuantumGate:
         return cls._cache[name]
 
 
-def cx_gate(coeff: complex, key: int, n: int,
-              ctrl: int, tgt: int) -> Tuple[int, complex, int, complex, int]:
+def cx_gate(pauli_term: PauliTerm, ctrl: int, tgt: int) -> List[PauliTerm]:
     """
     Implement CNOT gate Pauli propagation.
     
     Parameters
     ----------
-    coeff : complex
-        Input coefficient
-    key : int
-        Pauli operator key
-    n : int
-        Number of qubits
+    pauli_term : PauliTerm
+        Input Pauli term
     ctrl : int
         Control qubit index
     tgt : int
@@ -97,9 +90,13 @@ def cx_gate(coeff: complex, key: int, n: int,
         
     Returns
     -------
-    Tuple[int, complex, int, complex, int]
-        Number of terms, coefficient, output key, unused coefficient, unused key
+    List[PauliTerm]
+        Output Pauli terms (always single term for CX)
     """
+    coeff = pauli_term.coeff
+    key = pauli_term.key
+    n = pauli_term.n
+    
     # Extract X and Z bits for control and target qubits
     x_c = (key >>  ctrl)     & 1
     z_c = (key >> (n+ctrl))  & 1
@@ -119,43 +116,43 @@ def cx_gate(coeff: complex, key: int, n: int,
     if x_tn != x_t: outk ^= 1 << tgt
     if z_cn != z_c: outk ^= 1 << (n+ctrl)
     
-    return 1, coeff * phase, outk, 0j, 0
+    return [PauliTerm(coeff * phase, outk, n)]
 
 
-def t_gate(coeff: complex, key: int, n: int, q: int) -> Tuple[int, complex, int, complex, int]:
+def t_gate(pauli_term: PauliTerm, q: int) -> List[PauliTerm]:
     """
     Implement T gate Pauli propagation.
     
     Parameters
     ----------
-    coeff : complex
-        Input coefficient
-    key : int
-        Pauli operator key
-    n : int
-        Number of qubits
+    pauli_term : PauliTerm
+        Input Pauli term
     q : int
         Target qubit index
         
     Returns
     -------
-    Tuple[int, complex, int, complex, int]
-        Number of terms, coefficient, output key, second coefficient, second key
+    List[PauliTerm]
+        Output Pauli terms (1 or 2 terms)
     """
+    coeff = pauli_term.coeff
+    key = pauli_term.key
+    n = pauli_term.n
+    
     # Extract X and Z bits for target qubit
     x = (key >>  q)     & 1
     z = (key >> (n+q))  & 1
     
     # Z or I Pauli: no change
     if (z and not x) or (not x and not z):
-        return 1, coeff, key, 0j, 0
+        return [pauli_term]
         
     # X or Y Pauli: splits into two terms
     key2 = key ^ (1 << (n+q))  # Flip Z bit
-    c1 = coeff / np.sqrt(2)
+    c1 = coeff * _SQRT2_INV
     c2 = +c1 if z else -c1
     
-    return 2, c1, key, c2, key2
+    return [PauliTerm(c1, key, n), PauliTerm(c2, key2, n)]
 
 
 # Pre-compute 2-qubit Pauli matrices (improves SU4 performance)
@@ -168,56 +165,27 @@ _SINGLE_P = (
 _P_STACK = np.stack([np.kron(_SINGLE_P[q2], _SINGLE_P[q1])
                      for q2 in range(4) for q1 in range(4)])
 
-# Precompute bit operations
+# Precompute bit operations and lookup tables
 _CODE_TO_BITS = [(0,0), (0,1), (1,1), (1,0)]
+_BITS_TO_CODE = [[0, 1], [3, 2]]  # [z][x]
 
 def _code_from_bits(z: int, x: int) -> int:
-    """
-    Convert Z and X bits to Pauli code.
-    
-    Parameters
-    ----------
-    z : int
-        Z bit
-    x : int
-        X bit
-        
-    Returns
-    -------
-    int
-        Pauli code (0=I, 1=X, 2=Y, 3=Z)
-    """
-    return (z << 1) | x if z == 0 else (2 | (x ^ 1))
+    """Convert Z and X bits to Pauli code using lookup table."""
+    return _BITS_TO_CODE[z][x]
 
 def _bits_from_code(c: int) -> Tuple[int, int]:
-    """
-    Convert Pauli code to Z and X bits.
-    
-    Parameters
-    ----------
-    c : int
-        Pauli code (0=I, 1=X, 2=Y, 3=Z)
-        
-    Returns
-    -------
-    Tuple[int, int]
-        Z and X bits
-    """
+    """Convert Pauli code to Z and X bits using lookup table."""
     return _CODE_TO_BITS[c]
 
-def su4_gate(coeff: complex, key: int, n: int,
-              q1: int, q2: int, mat: np.ndarray):
+
+def su4_gate(pauli_term: PauliTerm, q1: int, q2: int, mat: np.ndarray) -> List[PauliTerm]:
     """
     Implement arbitrary 2-qubit gate Pauli propagation.
     
     Parameters
     ----------
-    coeff : complex
-        Input coefficient
-    key : int
-        Pauli operator key
-    n : int
-        Number of qubits
+    pauli_term : PauliTerm
+        Input Pauli term
     q1 : int
         First qubit index
     q2 : int
@@ -227,9 +195,13 @@ def su4_gate(coeff: complex, key: int, n: int,
         
     Returns
     -------
-    Tuple[int, np.ndarray, np.ndarray]
-        Number of terms, coefficients, output keys
+    List[PauliTerm]
+        List of output Pauli terms
     """
+    coeff = pauli_term.coeff
+    key = pauli_term.key
+    n = pauli_term.n
+    
     # Extract X and Z bits for both qubits
     x1 = (key >>  q1)     & 1
     z1 = (key >> (n+q1))  & 1
@@ -237,7 +209,7 @@ def su4_gate(coeff: complex, key: int, n: int,
     z2 = (key >> (n+q2))  & 1
     
     # Calculate index into Pauli basis
-    beta_idx = 4*_code_from_bits(z2,x2) + _code_from_bits(z1,x1)
+    beta_idx = 4 * _BITS_TO_CODE[z2][x2] + _BITS_TO_CODE[z1][x1]
 
     # Conjugate with unitary matrix
     conj = mat.conj().T @ _P_STACK[beta_idx] @ mat
@@ -245,49 +217,43 @@ def su4_gate(coeff: complex, key: int, n: int,
     # Calculate coefficients in Pauli basis
     coeffs = 0.25 * np.einsum('aij,ij->a', _P_STACK.conj(), conj)
 
-    # Prepare output arrays
-    coeff_out = np.empty(16, dtype=complex)
-    key_out = np.empty(16, dtype=object)  # Use object dtype for arbitrary large integers
-    L = 0
+    # Prepare output
+    c_arr = (coeff * coeffs).real  # only take real part of coefficients
+    mask = np.abs(c_arr) >= _TOLERANCE
+    significant_idxs = np.where(mask)[0]
 
-    c_arr = coeff * coeffs                       # vectorized compute of all 16 c values
-    mask = (np.abs(c_arr.real) + np.abs(c_arr.imag)) >= 1e-12
-    significant_idxs = np.nonzero(mask)[0]       # only non-negligible indices
-
-    L = 0
+    result = []
     for alpha in significant_idxs:
         c = c_arr[alpha]
         code2a, code1a = divmod(alpha, 4)
         new_key = key
+        
         # apply bit flips for q1
-        z1, x1 = _bits_from_code(code1a)
-        if ((new_key >> q1) & 1) != x1:
+        z1_new, x1_new = _CODE_TO_BITS[code1a]
+        if ((new_key >> q1) & 1) != x1_new:
             new_key ^= 1 << q1
-        if ((new_key >> (n+q1)) & 1) != z1:
+        if ((new_key >> (n+q1)) & 1) != z1_new:
             new_key ^= 1 << (n+q1)
+        
         # apply bit flips for q2
-        z2, x2 = _bits_from_code(code2a)
-        if ((new_key >> q2) & 1) != x2:
+        z2_new, x2_new = _CODE_TO_BITS[code2a]
+        if ((new_key >> q2) & 1) != x2_new:
             new_key ^= 1 << q2
-        if ((new_key >> (n+q2)) & 1) != z2:
+        if ((new_key >> (n+q2)) & 1) != z2_new:
             new_key ^= 1 << (n+q2)
 
-        coeff_out[L] = c
-        key_out[L]   = new_key
-        L += 1
+        result.append(PauliTerm(c, new_key, n))
 
-        coeff_out = coeff_out.real
-
-    return L, coeff_out[:L], key_out[:L]
+    return result
 
 
-
-# Register gates with QuantumGate class
+# register
 QuantumGate._registry.update({
     "cx" : cx_gate,
     "t"  : t_gate,
     "su4": su4_gate,
 })
+
 
 # Add static methods for direct access
 setattr(QuantumGate, "CXgate",  staticmethod(cx_gate))

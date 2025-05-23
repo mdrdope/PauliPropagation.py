@@ -1,3 +1,5 @@
+# -*- coding: utf-8 -*-
+
 import random
 import numpy as np
 import pytest
@@ -55,20 +57,20 @@ def test_staircase_random_su4(nx, ny):
     PauliPropagator against statevector simulation for a random
     SU(4) staircase circuit. Error must be <= 15%.
     """
-    # fix randomness for reproducibility
+    # Fix randomness for reproducibility
     random.seed(42)
     np.random.seed(42)
 
     qc = staircasetopology2d_qc(nx, ny)
     n = qc.num_qubits
 
-    # build initial PauliTerm for X on qubit 0
+    # Build initial PauliTerm for X on qubit 0
     pauli_label = "X" + "I" * (n - 1)
     obs = Pauli(pauli_label)
     key = encode_pauli(obs)
     init_term = PauliTerm(1.0, key, n)
 
-    # propagate observable through circuit
+    # Propagate observable through circuit
     prop = PauliPropagator(qc)
     layers = prop.propagate(init_term, max_weight=3)
     prop_exp = prop.expectation_pauli_sum(
@@ -76,12 +78,12 @@ def test_staircase_random_su4(nx, ny):
         product_label="+" * n
     )
 
-    # statevector-based expectation
+    # Statevector-based expectation calculation
     psi0 = Statevector.from_label("+" * n)
     psi_final = psi0.evolve(qc)
     sv_exp = psi_final.expectation_value(obs).real
 
-    # assert relative error within 10%
+    # Assert relative error within 10%
     assert np.isclose(
         prop_exp, sv_exp, atol=0.1
     ), (
