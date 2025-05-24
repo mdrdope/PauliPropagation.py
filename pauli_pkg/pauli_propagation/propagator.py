@@ -2,8 +2,9 @@
 
 # pauli_pkg/pauli_propagation/propagator.py
 import numpy as np
-from typing import List, Dict
+from typing import List, Dict, Tuple, Set, Union
 from qiskit import QuantumCircuit
+import math
 from .pauli_term  import PauliTerm
 from .utils       import weight_of_key
 from .gates       import QuantumGate
@@ -55,6 +56,59 @@ def _apply_gate_kernel_batch(args):
     return results
 
 
+def _sample_one_path(args):
+    """
+    Helper function for ProcessPoolExecutor to sample one Monte Carlo path.
+    This function must be at module level to be picklable for multiprocessing.
+    
+    Parameters
+    ----------
+    args : tuple
+        Contains (ops, init_key, init_coeff, n, tol)
+        where ops is a list of (gate_name, qidx, extra) tuples
+        
+    Returns
+    -------
+    List[Tuple[complex, int, int]]
+        Path as list of (coefficient, key, n) tuples
+    """
+    ops, init_key, init_coeff, n, tol = args
+    
+    path = []
+    current_key = init_key
+    current_coeff = init_coeff
+    path.append((current_coeff, current_key, n))
+
+    for gate_name, qidx, extra in ops:
+        # Get gate function
+        gate_func = QuantumGate.get(gate_name)
+        
+        # Create input PauliTerm
+        inp = PauliTerm(1.0, current_key, n)
+        
+        # Apply gate
+        if extra:
+            out_terms = gate_func(inp, *qidx, *extra)
+        else:
+            out_terms = gate_func(inp, *qidx)
+
+        # Filter non-zero amplitude branches
+        branches = [(t.key, t.coeff) for t in out_terms if abs(t.coeff) > tol]
+        
+        if not branches:  # No valid branches, terminate path
+            break
+            
+        probs = np.array([abs(c)**2 for _, c in branches], dtype=float)
+        probs /= probs.sum()
+
+        idx = np.random.choice(len(branches), p=probs)
+        current_key, amp = branches[idx]
+        current_coeff *= amp
+        path.append((current_coeff, current_key, n))
+
+    return path
+
+
 class PauliPropagator:
     """
     Bit-mask based back-propagation of Pauli observables through quantum circuits.
@@ -91,6 +145,9 @@ class PauliPropagator:
                      exp_table: np.ndarray) -> float:
         """
         Calculate expectation value for a set of Pauli terms.
+        
+        This method efficiently computes the expectation value of a sum of Pauli terms
+        using pre-computed lookup tables and bit-mask operations.
         
         Parameters
         ----------
@@ -207,10 +264,8 @@ class PauliPropagator:
                             for i in range(0, len(current_terms_data), chunk_size)]
                     
                     # Process chunks in parallel
-                    future_to_chunk = {
-                        executor.submit(_apply_gate_kernel_batch, (chunk, gate_name, qidx, extra_args)): chunk 
-                        for chunk in chunks
-                    }
+                    future_to_chunk = {executor.submit(_apply_gate_kernel_batch, (chunk, gate_name, qidx, extra_args)): chunk 
+                                       for chunk in chunks}
                     
                     next_terms_data = []
                     for future in as_completed(future_to_chunk):
@@ -278,7 +333,7 @@ class PauliPropagator:
         # Pre-allocate arrays for vectorized operations
         m = len(pauli_sum)
         coeffs = np.empty(m, dtype=complex)
-        keys = np.empty(m, dtype=object)  
+        keys = np.empty(m, dtype=object)
         
         # Fill arrays
         for i, term in enumerate(pauli_sum):
@@ -289,3 +344,58 @@ class PauliPropagator:
         return float(self._expect_keys(coeffs, keys,
                                      state_idxs, self.n,
                                      self._EXP_TABLE))
+    
+# tol是要删掉的，没有意义的
+    def monte_carlo_paths(self,
+                          init_term: PauliTerm,
+                          M: int,
+                          tol: float = 0
+                         ) -> List[List[PauliTerm]]:
+        """
+        Generate M Monte Carlo backtracking paths, each path is a list of PauliTerms.
+        Always uses parallel processing for optimal performance.
+        
+        Parameters
+        ----------
+        init_term : PauliTerm
+            Initial Pauli term
+        M : int
+            Number of Monte Carlo paths to generate
+        tol : float
+            Tolerance for filtering small coefficients
+            
+        Returns
+        -------
+        List[List[PauliTerm]]
+            List of M paths, each path is a list of PauliTerms
+        """
+        if init_term.n != self.n:
+            raise ValueError("Initial term qubit count mismatch")
+
+        # Prepare reverse operation sequence
+        ops = []
+        for instr in reversed(self.qc.data):
+            gate_name = instr.operation.name
+            qidx = tuple(self.q2i[q] for q in instr.qubits)
+            extra = ()
+            if gate_name == "su4" and hasattr(instr.operation, "to_matrix"):
+                extra = (instr.operation.to_matrix(),)
+            ops.append((gate_name, qidx, extra))
+
+        # Always use parallel processing
+        pauli_paths = []
+        with ProcessPoolExecutor(max_workers=_MAX_WORKERS) as executor:
+            # Prepare arguments for all paths
+            args_list = [(ops, init_term.key, init_term.coeff, self.n, tol) for _ in range(M)]
+            
+            # Submit all tasks
+            futures = [executor.submit(_sample_one_path, args) for args in args_list]
+            
+            # Collect results with progress bar
+            for future in tqdm(as_completed(futures), total=M, desc="MC sampling"):
+                path_data = future.result()
+                # Convert path data back to PauliTerm objects
+                path = [PauliTerm(coeff, key, n) for coeff, key, n in path_data]
+                pauli_paths.append(path)
+
+        return pauli_paths

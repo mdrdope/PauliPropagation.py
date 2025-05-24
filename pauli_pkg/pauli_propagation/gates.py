@@ -18,13 +18,12 @@ Notes
 import numpy as np
 np.dtype(np.float64)  
 from .pauli_term import PauliTerm
-from typing import Tuple, Dict, Callable, List
-
+from typing import Tuple, Dict, Callable, Optional, List, Union
+from functools import lru_cache
 dtype=np.float64
 
-# Precompute constants to avoid repeated calculations
-_SQRT2_INV = 1.0 / np.sqrt(2)
-_TOLERANCE = 1e-28
+
+
 
 class QuantumGate:
     """
@@ -149,7 +148,7 @@ def t_gate(pauli_term: PauliTerm, q: int) -> List[PauliTerm]:
         
     # X or Y Pauli: splits into two terms
     key2 = key ^ (1 << (n+q))  # Flip Z bit
-    c1 = coeff * _SQRT2_INV
+    c1 = coeff / np.sqrt(2)
     c2 = +c1 if z else -c1
     
     return [PauliTerm(c1, key, n), PauliTerm(c2, key2, n)]
@@ -165,16 +164,15 @@ _SINGLE_P = (
 _P_STACK = np.stack([np.kron(_SINGLE_P[q2], _SINGLE_P[q1])
                      for q2 in range(4) for q1 in range(4)])
 
-# Precompute bit operations and lookup tables
+# Precompute bit operations
 _CODE_TO_BITS = [(0,0), (0,1), (1,1), (1,0)]
-_BITS_TO_CODE = [[0, 1], [3, 2]]  # [z][x]
 
 def _code_from_bits(z: int, x: int) -> int:
-    """Convert Z and X bits to Pauli code using lookup table."""
-    return _BITS_TO_CODE[z][x]
+    """Convert Z and X bits to Pauli code."""
+    return (z << 1) | x if z == 0 else (2 | (x ^ 1))
 
 def _bits_from_code(c: int) -> Tuple[int, int]:
-    """Convert Pauli code to Z and X bits using lookup table."""
+    """Convert Pauli code to Z and X bits."""
     return _CODE_TO_BITS[c]
 
 
@@ -209,7 +207,7 @@ def su4_gate(pauli_term: PauliTerm, q1: int, q2: int, mat: np.ndarray) -> List[P
     z2 = (key >> (n+q2))  & 1
     
     # Calculate index into Pauli basis
-    beta_idx = 4 * _BITS_TO_CODE[z2][x2] + _BITS_TO_CODE[z1][x1]
+    beta_idx = 4*_code_from_bits(z2,x2) + _code_from_bits(z1,x1)
 
     # Conjugate with unitary matrix
     conj = mat.conj().T @ _P_STACK[beta_idx] @ mat
@@ -217,10 +215,10 @@ def su4_gate(pauli_term: PauliTerm, q1: int, q2: int, mat: np.ndarray) -> List[P
     # Calculate coefficients in Pauli basis
     coeffs = 0.25 * np.einsum('aij,ij->a', _P_STACK.conj(), conj)
 
-    # Prepare output
-    c_arr = (coeff * coeffs).real  # only take real part of coefficients
-    mask = np.abs(c_arr) >= _TOLERANCE
-    significant_idxs = np.where(mask)[0]
+    # Prepare output (optimized for performance)
+    c_arr = coeff * coeffs                       # vectorized compute of all 16 c values
+    mask = (np.abs(c_arr.real) + np.abs(c_arr.imag)) >= 1e-12
+    significant_idxs = np.nonzero(mask)[0]       # only non-negligible indices
 
     result = []
     for alpha in significant_idxs:
@@ -229,20 +227,20 @@ def su4_gate(pauli_term: PauliTerm, q1: int, q2: int, mat: np.ndarray) -> List[P
         new_key = key
         
         # apply bit flips for q1
-        z1_new, x1_new = _CODE_TO_BITS[code1a]
-        if ((new_key >> q1) & 1) != x1_new:
+        z1, x1 = _bits_from_code(code1a)
+        if ((new_key >> q1) & 1) != x1:
             new_key ^= 1 << q1
-        if ((new_key >> (n+q1)) & 1) != z1_new:
+        if ((new_key >> (n+q1)) & 1) != z1:
             new_key ^= 1 << (n+q1)
         
         # apply bit flips for q2
-        z2_new, x2_new = _CODE_TO_BITS[code2a]
-        if ((new_key >> q2) & 1) != x2_new:
+        z2, x2 = _bits_from_code(code2a)
+        if ((new_key >> q2) & 1) != x2:
             new_key ^= 1 << q2
-        if ((new_key >> (n+q2)) & 1) != z2_new:
+        if ((new_key >> (n+q2)) & 1) != z2:
             new_key ^= 1 << (n+q2)
 
-        result.append(PauliTerm(c, new_key, n))
+        result.append(PauliTerm(c.real, new_key, n)) # .real
 
     return result
 

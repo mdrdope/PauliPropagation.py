@@ -2,7 +2,7 @@
 
 # pauli_pkg/pauli_propagation/pauli_term.py
 from dataclasses import dataclass
-from .utils import decode_pauli
+from .utils import decode_pauli, weight_of_key
 
 @dataclass(slots=True)
 class PauliTerm:
@@ -56,3 +56,13 @@ class PauliTerm:
             and P is the Pauli operator label
         """
         return f"{self.coeff:+g}*{self.to_label()}"
+    
+    def weight(self) -> int:
+        """
+        Compute the weight of the Pauli term.
+        
+        The weight is the number of non-identity Pauli operators
+        in the term, i.e., the number of qubits on which the operator
+        acts non-trivially.
+        """
+        return weight_of_key(self.key, self.n)  

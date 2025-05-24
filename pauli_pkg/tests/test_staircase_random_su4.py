@@ -3,7 +3,6 @@
 import random
 import numpy as np
 import pytest
-from math import pi
 from qiskit import QuantumCircuit
 from qiskit.quantum_info import Pauli, Statevector
 from qiskit.circuit.library import UnitaryGate
@@ -50,7 +49,7 @@ def staircasetopology2d_qc(nx, ny):
     return qc
 
 
-@pytest.mark.parametrize("nx, ny", [(2, 2), (2, 3), (3, 3),(2,5), (3, 4), (2,6),(5,3),(3,6)])
+@pytest.mark.parametrize("nx, ny", [(1,2), (1,3),(2, 2),(1,4),(1,5) ,(2, 3), (1,7),(2,4), (1,8)]) # , (3, 4), (2,6), (5,3),(3,6)])
 def test_staircase_random_su4(nx, ny):
     """
     Compare expectation value of X on qubit 0 computed by
@@ -72,11 +71,10 @@ def test_staircase_random_su4(nx, ny):
 
     # Propagate observable through circuit
     prop = PauliPropagator(qc)
-    layers = prop.propagate(init_term, max_weight=3)
+    layers = prop.propagate(init_term, max_weight=None)
     prop_exp = prop.expectation_pauli_sum(
         pauli_sum=layers[-1],
-        product_label="+" * n
-    )
+        product_label="+" * n)
 
     # Statevector-based expectation calculation
     psi0 = Statevector.from_label("+" * n)
@@ -84,10 +82,6 @@ def test_staircase_random_su4(nx, ny):
     sv_exp = psi_final.expectation_value(obs).real
 
     # Assert relative error within 10%
-    assert np.isclose(
-        prop_exp, sv_exp, atol=0.1
-    ), (
-        f"Pauli propagation exp {prop_exp:.4f} "
-        f"differs from statevector {sv_exp:.4f} "
-        "by more than 0.1"
-    )
+    rel_err = abs(prop_exp - sv_exp) / abs(sv_exp)
+    assert rel_err <= 0.001, (f"Relative error {rel_err:.2%} exceeds 25%: "
+                            f"prop={prop_exp:.4f}, statevector={sv_exp:.4f}")

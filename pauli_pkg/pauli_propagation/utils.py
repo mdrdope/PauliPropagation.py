@@ -67,34 +67,6 @@ def decode_pauli(key: int, n: int) -> "Pauli":
 # Lookup table for population count (popcount) of 8-bit integers
 _POPCOUNT_TABLE = np.array([bin(x).count("1") for x in range(256)], dtype=np.uint8)
 
-# def _weight_of_key(key: int, n: int) -> int:
-#     """
-#     Calculate Pauli weight using bit manipulation and lookup table.
-    
-#     Parameters
-#     ----------
-#     key : int
-#         Encoded Pauli operator
-#     n : int
-#         Number of qubits
-        
-#     Returns
-#     -------
-#     int
-#         Number of non-identity Pauli factors
-#     """
-#     # Combine X and Z bits using bitwise OR
-#     mask = (1 << n) - 1
-#     bits = (key & mask) | ((key >> n) & mask)
-    
-#     # Use lookup table for faster population count
-#     count = 0
-#     while bits:
-#         # Process 8 bits at a time using lookup table
-#         count += _POPCOUNT_TABLE[bits & 0xFF]
-#         bits >>= 8
-    
-#     return count
 
 def _weight_of_key(key: int, n: int) -> int:
     """
