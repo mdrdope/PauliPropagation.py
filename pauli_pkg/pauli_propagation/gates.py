@@ -15,6 +15,16 @@ Notes
 - All gates return List[PauliTerm] for consistency
 """
 
+# todo: 
+# RX/RY/RZ gates
+# CZ gate
+# CNOT gate
+# SWAP gate
+# Toffoli gate
+# Fredkin gate
+# Ising gate
+
+
 import numpy as np
 np.dtype(np.float64)  
 from .pauli_term import PauliTerm
