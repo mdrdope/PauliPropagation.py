@@ -14,7 +14,7 @@ from concurrent.futures import ProcessPoolExecutor, as_completed
 
 # Threshold for parallel processing and maximum number of worker processes
 _PARALLEL_THRESHOLD = 2000
-_MAX_WORKERS = 8  # or os.cpu_count()
+_MAX_WORKERS = 8 # or os.cpu_count()
 
 
 def _apply_gate_kernel_batch(args):
@@ -79,12 +79,12 @@ class PauliPropagator:
     _STATE_IDX = {'0':0,'1':1,'+':2,'-':3,'r':4,'l':5}
     # Pre-computed expectation values for different states and Pauli operators
     _EXP_TABLE = np.zeros((6,2,2), dtype=float)
-    _EXP_TABLE[_STATE_IDX['0'],:] = [[1,0],[1,0]]  # |0⟩ state
-    _EXP_TABLE[_STATE_IDX['1'],:] = [[1,0],[-1,0]] # |1⟩ state
-    _EXP_TABLE[_STATE_IDX['+'],:] = [[1,1],[0,0]]  # |+⟩ state
-    _EXP_TABLE[_STATE_IDX['-'],:] = [[1,-1],[0,0]] # |-⟩ state
-    _EXP_TABLE[_STATE_IDX['r'],:] = [[1,0],[0,1]]  # |r⟩ state
-    _EXP_TABLE[_STATE_IDX['l'],:] = [[1,0],[0,-1]] # |l⟩ state
+    _EXP_TABLE[_STATE_IDX['0'],:] = [[1,0],[1,0]]  # |0�?? state
+    _EXP_TABLE[_STATE_IDX['1'],:] = [[1,0],[-1,0]] # |1�?? state
+    _EXP_TABLE[_STATE_IDX['+'],:] = [[1,1],[0,0]]  # |+�?? state
+    _EXP_TABLE[_STATE_IDX['-'],:] = [[1,-1],[0,0]] # |-�?? state
+    _EXP_TABLE[_STATE_IDX['r'],:] = [[1,0],[0,1]]  # |r�?? state
+    _EXP_TABLE[_STATE_IDX['l'],:] = [[1,0],[0,-1]] # |l�?? state
 
     @staticmethod
     def _expect_keys(coeffs: np.ndarray, keys: np.ndarray, 
@@ -292,35 +292,36 @@ class PauliPropagator:
                                      state_idxs, self.n,
                                      self._EXP_TABLE))
     
-
     @staticmethod
-    def _sample_one_path(args):
+    def _sample_one_path(args): # paper method
         """
         Helper function for ProcessPoolExecutor to sample one Monte Carlo path.
         This staticmethod can be pickled for multiprocessing.
-        
+
         Parameters
         ----------
         args : tuple
             Contains (ops, init_key, init_coeff, n, tol)
             where ops is a list of (gate_name, qidx, extra) tuples
-            
+
         Returns
         -------
         Tuple[complex, int, int, List[bool]]
-            (last_coeff, last_key, n, weight_exceeded_flags) 
-            where weight_exceeded_flags is a list of 6 booleans indicating 
-            if weight > [1,2,3,4,5,6] was encountered during propagation
+            (last_coeff_unbiased, last_key, n, weight_exceeded_flags)
+            - last_coeff_unbiased: Φ_γ / |Φ_γ|^2, so that E[last_coeff_unbiased * d_γ] = Σ Φ_γ d_γ
+            - last_key: final Pauli key
+            - n: number of qubits
+            - weight_exceeded_flags: booleans for weight thresholds
         """
         ops, init_key, init_coeff, n, tol = args
-        
+
         current_key = init_key
         current_coeff = init_coeff
-        
-        # Track if weight exceeded [1,2,3,4,5,6] at any point
-        weight_thresholds = [1, 2, 3, 4, 5, 6]
-        weight_exceeded_flags = [False] * 6  # Initialize all as False
-        
+
+        # Track if weight exceeded [0,1,2,3,4,5,6] at any point
+        weight_thresholds = [0, 1, 2, 3, 4, 5, 6]
+        weight_exceeded_flags = [False] * 7
+
         # Check initial weight
         init_term = PauliTerm(1.0, current_key, n)
         init_weight = init_term.weight()
@@ -328,43 +329,43 @@ class PauliPropagator:
             if init_weight > threshold:
                 weight_exceeded_flags[i] = True
 
+        # Propagate backwards through the circuit
         for gate_name, qidx, extra in ops:
-            # Get gate function
             gate_func = QuantumGate.get(gate_name)
-            
-            # Create input PauliTerm
             inp = PauliTerm(1.0, current_key, n)
-            
-            # Apply gate
+
             if extra:
                 out_terms = gate_func(inp, *qidx, *extra)
             else:
                 out_terms = gate_func(inp, *qidx)
 
-            # Filter non-zero amplitude branches
             branches = [(t.key, t.coeff) for t in out_terms]
-            # branches = [(t.key, t.coeff) for t in out_terms if abs(t.coeff) > tol]
-            
-            if not branches:  # No valid branches, terminate path
+            if not branches:
                 break
-                
+
             probs = np.array([abs(c)**2 for _, c in branches], dtype=float)
             probs /= probs.sum()
 
             idx = np.random.choice(len(branches), p=probs)
             current_key, amp = branches[idx]
             current_coeff *= amp
-            
-            # Check current step weight against all thresholds
-            current_term = PauliTerm(1.0, current_key, n)
-            current_weight = current_term.weight()
+
+            # Update weight flags
+            current_weight = PauliTerm(1.0, current_key, n).weight()
             for i, threshold in enumerate(weight_thresholds):
                 if current_weight > threshold:
                     weight_exceeded_flags[i] = True
 
-        return (current_coeff, current_key, n, weight_exceeded_flags)
+        # Compute unbiased estimator: Φ_γ / |Φ_γ|^2
+        p = abs(current_coeff)**2
+        if p > 0:
+            last_coeff_unbiased = current_coeff / p
+        else:
+            last_coeff_unbiased = 0.0
 
-    def monte_calro_samples(self,
+        return (last_coeff_unbiased, current_key, n, weight_exceeded_flags)
+
+    def monte_carlo_samples(self,
                           init_term: PauliTerm,
                           M: int,
                           tol: float = 0
@@ -388,7 +389,7 @@ class PauliPropagator:
             (sampled_last_paulis, weight_exceeded_details, last_pauli_weights, coeff_sqs)
             - sampled_last_paulis: List of final PauliTerms for each path
             - weight_exceeded_details: List of lists, each sublist has 6 booleans indicating 
-              if weight > [1,2,3,4,5,6] was encountered during that path's propagation
+              if weight > [0,1,2,3,4,5,6] was encountered during that path's propagation
             - last_pauli_weights: List of weights for each final PauliTerm
             - coeff_sqs: List of |coeff|^2 for each final PauliTerm
         """
@@ -430,3 +431,174 @@ class PauliPropagator:
         coeff_sqs = [np.abs(pauli.coeff)**2 for pauli in sampled_last_paulis]
 
         return sampled_last_paulis, weight_exceeded_details, last_pauli_weights, coeff_sqs
+ 
+
+    # def monte_carlo_samples_nonzero(
+    #     self,
+    #     init_term: PauliTerm,
+    #     M: int,
+    #     tol: float = 0.0,
+    # ) -> Tuple[
+    #     List[PauliTerm],
+    #     List[List[bool]],
+    #     List[int],
+    #     List[float],
+    # ]:
+    #     """
+    #     Generate *M* Monte-Carlo back-propagation paths **conditionally**
+    #     on the final Pauli term having non-zero expectation in the
+    #     computational |0…0⟩ state.
+
+    #     The interface and return types are identical to
+    #     `monte_carlo_samples`.
+
+    #     Every estimator is scaled by the empirical acceptance
+    #     probability  α̂ = M / total_tries, guaranteeing that
+
+    #         np.mean(expectations)  →  true expectation          (unbiased)
+
+    #     even though all returned terms satisfy  ⟨P_i, |0…0⟩⟩ ≠ 0.
+    #     """
+    #     if init_term.n != self.n:
+    #         raise ValueError("Initial term qubit count mismatch")
+
+    #     # Pre-compute reverse gate list once
+    #     ops: list[tuple[str, Tuple[int, ...], Tuple]] = []
+    #     for instr in reversed(self.qc.data):
+    #         name = instr.operation.name
+    #         qidx = tuple(self.q2i[q] for q in instr.qubits)
+    #         extra: Tuple = ()
+    #         if name == "su4" and hasattr(instr.operation, "to_matrix"):
+    #             extra = (instr.operation.to_matrix(),)
+    #         ops.append((name, qidx, extra))
+
+    #     sampled_last_paulis: list[PauliTerm] = []
+    #     weight_exceeded_details: list[list[bool]] = []
+    #     total_tries = 0
+
+    #     # Helper to test  ⟨P, |0…0⟩⟩ ≠ 0  (all X bits must be 0)
+    #     n = self.n
+    #     x_mask = (1 << n) - 1
+    #     def _non_zero_expect(key: int) -> bool:
+    #         return (key & x_mask) == 0
+
+    #     with ProcessPoolExecutor(max_workers=_MAX_WORKERS) as exe:
+    #         # Continue launching batches until we have M accepted samples
+    #         while len(sampled_last_paulis) < M:
+    #             # Size of the next batch – grows with remaining demand
+    #             remaining = M - len(sampled_last_paulis)
+    #             batch_size = max(_PARALLEL_THRESHOLD, remaining)
+    #             args_list = [
+    #                 (ops, init_term.key, init_term.coeff, n, tol)
+    #                 for _ in range(batch_size)
+    #             ]
+    #             futures = [exe.submit(
+    #                 PauliPropagator._sample_one_path, a
+    #             ) for a in args_list]
+
+    #             for fut in as_completed(futures):
+    #                 total_tries += 1
+    #                 coeff, key, n_qubits, flags = fut.result()
+
+    #                 if not _non_zero_expect(key):
+    #                     # Reject – expectation in |0…0⟩ is zero
+    #                     continue
+
+    #                 # Accept
+    #                 sampled_last_paulis.append(
+    #                     PauliTerm(coeff, key, n_qubits)
+    #                 )
+    #                 weight_exceeded_details.append(flags)
+
+    #                 if len(sampled_last_paulis) == M:
+    #                     break  # stop early when enough accepted samples
+
+    #     # Empirical acceptance probability  α̂
+    #     acc_prob = M / total_tries
+
+    #     # Scale each unbiased coefficient by α̂  to retain overall
+    #     # unbiasedness after conditioning
+    #     for pauli in sampled_last_paulis:
+    #         pauli.coeff *= acc_prob
+
+    #     last_pauli_weights = [p.weight() for p in sampled_last_paulis]
+    #     coeff_sqs = [abs(p.coeff) ** 2 for p in sampled_last_paulis]
+
+    #     return (
+    #         sampled_last_paulis,
+    #         weight_exceeded_details,
+    #         last_pauli_weights,
+    #         coeff_sqs,
+    #     )
+
+
+    # @staticmethod
+    # def _sample_one_path(args):
+    #     """
+    #     Helper function for ProcessPoolExecutor to sample one Monte Carlo path.
+    #     This staticmethod can be pickled for multiprocessing.
+        
+    #     Parameters
+    #     ----------
+    #     args : tuple
+    #         Contains (ops, init_key, init_coeff, n, tol)
+    #         where ops is a list of (gate_name, qidx, extra) tuples
+            
+    #     Returns
+    #     -------
+    #     Tuple[complex, int, int, List[bool]]
+    #         (last_coeff, last_key, n, weight_exceeded_flags) 
+    #         where weight_exceeded_flags is a list of 6 booleans indicating 
+    #         if weight > [0,1,2,3,4,5,6] was encountered during propagation
+    #     """
+    #     ops, init_key, init_coeff, n, tol = args
+        
+    #     current_key = init_key
+    #     current_coeff = init_coeff
+        
+    #     # Track if weight exceeded [0,1,2,3,4,5,6] at any point
+    #     weight_thresholds = [1, 2, 3, 4, 5, 6]
+    #     weight_exceeded_flags = [False] * 6  # Initialize all as False
+        
+    #     # Check initial weight
+    #     init_term = PauliTerm(1.0, current_key, n)
+    #     init_weight = init_term.weight()
+    #     for i, threshold in enumerate(weight_thresholds):
+    #         if init_weight > threshold:
+    #             weight_exceeded_flags[i] = True
+
+    #     for gate_name, qidx, extra in ops:
+    #         # Get gate function
+    #         gate_func = QuantumGate.get(gate_name)
+            
+    #         # Create input PauliTerm
+    #         inp = PauliTerm(1.0, current_key, n)
+            
+    #         # Apply gate
+    #         if extra:
+    #             out_terms = gate_func(inp, *qidx, *extra)
+    #         else:
+    #             out_terms = gate_func(inp, *qidx)
+
+    #         # Filter non-zero amplitude branches
+    #         branches = [(t.key, t.coeff) for t in out_terms]
+    #         # branches = [(t.key, t.coeff) for t in out_terms if abs(t.coeff) > tol]
+            
+    #         if not branches:  # No valid branches, terminate path
+    #             break
+                
+    #         probs = np.array([abs(c)**2 for _, c in branches], dtype=float)
+    #         probs /= probs.sum()
+
+    #         idx = np.random.choice(len(branches), p=probs)
+    #         current_key, amp = branches[idx]
+    #         current_coeff *= amp
+            
+    #         # Check current step weight against all thresholds
+    #         current_term = PauliTerm(1.0, current_key, n)
+    #         current_weight = current_term.weight()
+    #         for i, threshold in enumerate(weight_thresholds):
+    #             if current_weight > threshold:
+    #                 weight_exceeded_flags[i] = True
+
+    #     return (current_coeff, current_key, n, weight_exceeded_flags)
