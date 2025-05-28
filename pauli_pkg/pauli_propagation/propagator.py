@@ -11,11 +11,9 @@ from .gates       import QuantumGate
 from tqdm.notebook import tqdm
 from concurrent.futures import ProcessPoolExecutor, as_completed
 
-
 # Threshold for parallel processing and maximum number of worker processes
 _PARALLEL_THRESHOLD = 2000
-_MAX_WORKERS = 8 # or os.cpu_count()
-
+_MAX_WORKERS = 10 # or os.cpu_count()
 
 def _apply_gate_kernel_batch(args):
     """
@@ -61,8 +59,8 @@ class PauliPropagator:
     Bit-mask based back-propagation of Pauli observables through quantum circuits.
     
     This class implements efficient back-propagation of Pauli observables through
-    quantum circuits using bit-mask representations. It supports both exact propagation
-    and Monte Carlo sampling of Pauli paths.
+    quantum circuits using bit-mask representations. It supports exact propagation
+    of Pauli paths.
     
     Attributes
     ----------
@@ -74,17 +72,31 @@ class PauliPropagator:
         Mapping from qubit objects to indices
     """
 
+    def __init__(self, qc: QuantumCircuit):
+        """
+        Initialize propagator with a quantum circuit.
+        
+        Parameters
+        ----------
+        qc : QuantumCircuit
+            The quantum circuit to propagate through
+        """
+        self.qc  = qc
+        self.n   = qc.num_qubits
+        self.q2i = {q: i for i, q in enumerate(qc.qubits)}
+
+
     # -------- Expectation value lookup tables --------
     # State indices mapping for different basis states
     _STATE_IDX = {'0':0,'1':1,'+':2,'-':3,'r':4,'l':5}
     # Pre-computed expectation values for different states and Pauli operators
     _EXP_TABLE = np.zeros((6,2,2), dtype=float)
-    _EXP_TABLE[_STATE_IDX['0'],:] = [[1,0],[1,0]]  # |0�?? state
-    _EXP_TABLE[_STATE_IDX['1'],:] = [[1,0],[-1,0]] # |1�?? state
-    _EXP_TABLE[_STATE_IDX['+'],:] = [[1,1],[0,0]]  # |+�?? state
-    _EXP_TABLE[_STATE_IDX['-'],:] = [[1,-1],[0,0]] # |-�?? state
-    _EXP_TABLE[_STATE_IDX['r'],:] = [[1,0],[0,1]]  # |r�?? state
-    _EXP_TABLE[_STATE_IDX['l'],:] = [[1,0],[0,-1]] # |l�?? state
+    _EXP_TABLE[_STATE_IDX['0'],:] = [[1,0],[1,0]]  # |0�???? state
+    _EXP_TABLE[_STATE_IDX['1'],:] = [[1,0],[-1,0]] # |1�???? state
+    _EXP_TABLE[_STATE_IDX['+'],:] = [[1,1],[0,0]]  # |+�???? state
+    _EXP_TABLE[_STATE_IDX['-'],:] = [[1,-1],[0,0]] # |-�???? state
+    _EXP_TABLE[_STATE_IDX['r'],:] = [[1,0],[0,1]]  # |r�???? state
+    _EXP_TABLE[_STATE_IDX['l'],:] = [[1,0],[0,-1]] # |l�???? state
 
     @staticmethod
     def _expect_keys(coeffs: np.ndarray, keys: np.ndarray, 
@@ -132,23 +144,10 @@ class PauliPropagator:
                     prod = 0.0
                     break
                 prod *= val
-                
             total += alpha.real * prod
             
         return total
 
-    def __init__(self, qc: QuantumCircuit):
-        """
-        Initialize propagator with a quantum circuit.
-        
-        Parameters
-        ----------
-        qc : QuantumCircuit
-            The quantum circuit to propagate through
-        """
-        self.qc  = qc
-        self.n   = qc.num_qubits
-        self.q2i = {q: i for i, q in enumerate(qc.qubits)}
 
     def propagate(self,
                   observable: PauliTerm,
@@ -191,15 +190,13 @@ class PauliPropagator:
         for instr in reversed(self.qc.data):
             gate_name = instr.operation.name
             qidx = tuple(self.q2i[q] for q in instr.qubits)
-            extra = ()
-            if gate_name == "su4" and hasattr(instr.operation, "to_matrix"):
-                extra = (instr.operation.to_matrix(),)
+            extra = QuantumGate.extract_params(gate_name, instr)
             ops.append((gate_name, qidx, extra))
 
         # Set up parallel processing if requested
         executor = ProcessPoolExecutor(max_workers=_MAX_WORKERS) if use_parallel else None
         try:
-            for gate_name, qidx, extra_args in tqdm(ops, desc="Propagating", total=len(ops)):
+            for gate_name, qidx, extra_args in tqdm(ops, desc=f"Propagating, k:{max_weight}", total=len(ops)):
                 
                 # For small numbers of terms or if parallel is disabled, process sequentially
                 if not use_parallel or len(current_terms_data) < _PARALLEL_THRESHOLD:
@@ -291,147 +288,107 @@ class PauliPropagator:
         return float(self._expect_keys(coeffs, keys,
                                      state_idxs, self.n,
                                      self._EXP_TABLE))
-    
-    @staticmethod
-    def _sample_one_path(args): # paper method
+
+    def analytical_truncation_mse(self,
+                                init_term: PauliTerm,
+                                product_label: str = None
+                                ) -> Dict[str, Union[Dict[int, float], int]]:
         """
-        Helper function for ProcessPoolExecutor to sample one Monte Carlo path.
-        This staticmethod can be pickled for multiprocessing.
+        Compute the exact, ��instantaneous�� truncation MSE (Mean Squared Error)
+        by dynamic programming over Pauli-propagation paths.
 
-        Parameters
-        ----------
-        args : tuple
-            Contains (ops, init_key, init_coeff, n, tol)
-            where ops is a list of (gate_name, qidx, extra) tuples
+        We treat each reverse-propagation path state as a tuple
+        (pauli_key, max_weight_so_far), where max_weight_so_far records
+        the largest Pauli weight encountered anywhere along the path.
 
-        Returns
-        -------
-        Tuple[complex, int, int, List[bool]]
-            (last_coeff_unbiased, last_key, n, weight_exceeded_flags)
-            - last_coeff_unbiased: Φ_γ / |Φ_γ|^2, so that E[last_coeff_unbiased * d_γ] = Σ Φ_γ d_γ
-            - last_key: final Pauli key
-            - n: number of qubits
-            - weight_exceeded_flags: booleans for weight thresholds
-        """
-        ops, init_key, init_coeff, n, tol = args
-
-        current_key = init_key
-        current_coeff = init_coeff
-
-        # Track if weight exceeded [0,1,2,3,4,5,6] at any point
-        weight_thresholds = [0, 1, 2, 3, 4, 5, 6]
-        weight_exceeded_flags = [False] * 7
-
-        # Check initial weight
-        init_term = PauliTerm(1.0, current_key, n)
-        init_weight = init_term.weight()
-        for i, threshold in enumerate(weight_thresholds):
-            if init_weight > threshold:
-                weight_exceeded_flags[i] = True
-
-        # Propagate backwards through the circuit
-        for gate_name, qidx, extra in ops:
-            gate_func = QuantumGate.get(gate_name)
-            inp = PauliTerm(1.0, current_key, n)
-
-            if extra:
-                out_terms = gate_func(inp, *qidx, *extra)
-            else:
-                out_terms = gate_func(inp, *qidx)
-
-            branches = [(t.key, t.coeff) for t in out_terms]
-            if not branches:
-                break
-
-            probs = np.array([abs(c)**2 for _, c in branches], dtype=float)
-            probs /= probs.sum()
-
-            idx = np.random.choice(len(branches), p=probs)
-            current_key, amp = branches[idx]
-            current_coeff *= amp
-
-            # Update weight flags
-            current_weight = PauliTerm(1.0, current_key, n).weight()
-            for i, threshold in enumerate(weight_thresholds):
-                if current_weight > threshold:
-                    weight_exceeded_flags[i] = True
-
-        # Compute unbiased estimator: Φ_γ / |Φ_γ|^2
-        p = abs(current_coeff)**2
-        if p > 0:
-            last_coeff_unbiased = current_coeff / p
-        else:
-            last_coeff_unbiased = 0.0
-
-        return (last_coeff_unbiased, current_key, n, weight_exceeded_flags)
-
-    def monte_carlo_samples(self,
-                          init_term: PauliTerm,
-                          M: int,
-                          tol: float = 0
-                         ) -> Tuple[List[PauliTerm], List[List[bool]], List[int], List[float]]:
-        """
-        Generate M Monte Carlo backtracking paths, only keeping the final PauliTerms.
-        Always uses parallel processing for optimal performance.
-        
         Parameters
         ----------
         init_term : PauliTerm
-            Initial Pauli term
-        M : int
-            Number of Monte Carlo paths to generate
-        tol : float
-            Tolerance for filtering small coefficients
-            
+            The starting Pauli term (with coeff=1 and its encoded key)
+        product_label : str, optional
+            Product-state label for expectation (e.g. "000...0"); defaults to all-zeros
+
         Returns
         -------
-        Tuple[List[PauliTerm], List[List[bool]], List[int], List[float]]
-            (sampled_last_paulis, weight_exceeded_details, last_pauli_weights, coeff_sqs)
-            - sampled_last_paulis: List of final PauliTerms for each path
-            - weight_exceeded_details: List of lists, each sublist has 6 booleans indicating 
-              if weight > [0,1,2,3,4,5,6] was encountered during that path's propagation
-            - last_pauli_weights: List of weights for each final PauliTerm
-            - coeff_sqs: List of |coeff|^2 for each final PauliTerm
+        Dict[str, Union[Dict[int, float], int]]
+            {
+            'mse_cumulative': {k: MSE^(k) = sum_{max_w > k} p * d^2},
+            'mse_per_weight': {k: ��MSE(k) = sum_{max_w == k} p * d^2},
+            'max_weight': int   # maximum weight encountered overall
+            }
         """
-        
         if init_term.n != self.n:
-            raise ValueError("Initial term qubit count mismatch")
-        
-        ops = [] # Prepare reverse gate operation sequence
+            raise ValueError("Initial PauliTerm qubit count mismatch")
+
+        # Default to the |0...0> product state
+        if product_label is None:
+            product_label = "0" * self.n
+
+        # 0) Initialize key and its initial weight
+        init_key = init_term.key
+        init_wt = init_term.weight()
+
+        # 1) Build the reverse-propagation gate list
+        ops: List[Tuple[str, Tuple[int, ...], Tuple]] = []
         for instr in reversed(self.qc.data):
-            gate_name = instr.operation.name
-            qidx = tuple(self.q2i[q] for q in instr.qubits) 
-            extra = ()
-            if gate_name == "su4" and hasattr(instr.operation, "to_matrix"):
-                extra = (instr.operation.to_matrix(),)
-            ops.append((gate_name, qidx, extra))
+            name = instr.operation.name
+            qidx = tuple(self.q2i[q] for q in instr.qubits)
+            extra = QuantumGate.extract_params(name, instr)
+            ops.append((name, qidx, extra))
 
-        # Always use parallel processing
-        sampled_last_paulis = []
-        weight_exceeded_details = []
-        
-        with ProcessPoolExecutor(max_workers=_MAX_WORKERS) as executor:
-            # Prepare arguments for all paths
-            args_list = [(ops, init_term.key, init_term.coeff, self.n, tol) for _ in range(M)]
-            
-            # Submit all tasks
-            futures = [executor.submit(PauliPropagator._sample_one_path, args) for args in args_list]
-            
-            # Collect results with progress bar
-            for future in tqdm(as_completed(futures), total=M, desc="MC sampling"):
-                coeff, key, n, weight_exceeded_flags = future.result()
-                
-                # Create final PauliTerm and store results
-                last_pauli = PauliTerm(coeff, key, n)
-                sampled_last_paulis.append(last_pauli)
-                weight_exceeded_details.append(weight_exceeded_flags)
+        # 2) Probability DP over states (pauli_key, max_weight_so_far)
+        # dist[(key, wmax)] = cumulative probability sum |��_��|^2 of reaching that state
+        dist: Dict[Tuple[int, int], float] = {(init_key, init_wt): 1.0}
 
-        # Calculate additional required values
-        last_pauli_weights = [pauli.weight() for pauli in sampled_last_paulis]
-        coeff_sqs = [np.abs(pauli.coeff)**2 for pauli in sampled_last_paulis]
+        for name, qidx, extra in tqdm(ops, desc="DP over states"):
+            gate_func = QuantumGate.get(name)
+            new_dist: Dict[Tuple[int, int], float] = {}
 
-        return sampled_last_paulis, weight_exceeded_details, last_pauli_weights, coeff_sqs
- 
+            for (key, wmax), prob in dist.items():
+                term = PauliTerm(1.0, key, self.n)
+                # generate all outgoing branches through this gate
+                branches = (gate_func(term, *qidx, *extra)
+                            if extra else gate_func(term, *qidx))
+
+                for branch in branches:
+                    p_branch = prob * (abs(branch.coeff) ** 2)
+                    new_wmax = max(wmax, branch.weight())
+                    new_key = branch.key
+                    new_dist[(new_key, new_wmax)] = new_dist.get((new_key, new_wmax), 0.0) + p_branch
+
+            dist = new_dist
+
+        # 3) Precompute d^2 = (<P, |0^n>>)^2 for each final key
+        d2_cache: Dict[int, float] = {}
+        for (key, _) in dist.keys():
+            if key not in d2_cache:
+                tmp_term = PauliTerm(1.0, key, self.n)
+                d2_cache[key] = self.expectation_pauli_sum([tmp_term], product_label) ** 2
+
+        max_k = max(w for (_, w) in dist.keys())
+
+        # 3a) Cumulative MSE^(k) = sum_{max_w > k} p * d^2
+        mse_cumulative: Dict[int, float] = {}
+        for k in range(max_k + 1):
+            tot = 0.0
+            for (key, wmax), p in dist.items():
+                if wmax > k:
+                    tot += p * d2_cache[key]
+            mse_cumulative[k] = tot
+
+        # 3b) Incremental ��MSE(k) = sum_{max_w == k} p * d^2
+        mse_per_weight: Dict[int, float] = {}
+        for k in range(max_k + 1):
+            tot = 0.0
+            for (key, wmax), p in dist.items():
+                if wmax == k:
+                    tot += p * d2_cache[key]
+            mse_per_weight[k] = tot
+
+        return {'mse_cumulative': mse_cumulative,
+                'mse_per_weight': mse_per_weight,
+                'max_weight': max_k}
+
 
     # def monte_carlo_samples_nonzero(
     #     self,
@@ -447,7 +404,7 @@ class PauliPropagator:
     #     """
     #     Generate *M* Monte-Carlo back-propagation paths **conditionally**
     #     on the final Pauli term having non-zero expectation in the
-    #     computational |0…0⟩ state.
+    #     computational |0�??0�?? state.
 
     #     The interface and return types are identical to
     #     `monte_carlo_samples`.
@@ -455,9 +412,9 @@ class PauliPropagator:
     #     Every estimator is scaled by the empirical acceptance
     #     probability  α̂ = M / total_tries, guaranteeing that
 
-    #         np.mean(expectations)  →  true expectation          (unbiased)
+    #         np.mean(expectations)  �??  true expectation          (unbiased)
 
-    #     even though all returned terms satisfy  ⟨P_i, |0…0⟩⟩ ≠ 0.
+    #     even though all returned terms satisfy  ⟨P_i, |0�??0⟩⟩ �?? 0.
     #     """
     #     if init_term.n != self.n:
     #         raise ValueError("Initial term qubit count mismatch")
@@ -476,7 +433,7 @@ class PauliPropagator:
     #     weight_exceeded_details: list[list[bool]] = []
     #     total_tries = 0
 
-    #     # Helper to test  ⟨P, |0…0⟩⟩ ≠ 0  (all X bits must be 0)
+    #     # Helper to test  ⟨P, |0�??0⟩⟩ �?? 0  (all X bits must be 0)
     #     n = self.n
     #     x_mask = (1 << n) - 1
     #     def _non_zero_expect(key: int) -> bool:
@@ -485,7 +442,7 @@ class PauliPropagator:
     #     with ProcessPoolExecutor(max_workers=_MAX_WORKERS) as exe:
     #         # Continue launching batches until we have M accepted samples
     #         while len(sampled_last_paulis) < M:
-    #             # Size of the next batch – grows with remaining demand
+    #             # Size of the next batch �?? grows with remaining demand
     #             remaining = M - len(sampled_last_paulis)
     #             batch_size = max(_PARALLEL_THRESHOLD, remaining)
     #             args_list = [
@@ -501,7 +458,7 @@ class PauliPropagator:
     #                 coeff, key, n_qubits, flags = fut.result()
 
     #                 if not _non_zero_expect(key):
-    #                     # Reject – expectation in |0…0⟩ is zero
+    #                     # Reject �?? expectation in |0�??0�?? is zero
     #                     continue
 
     #                 # Accept

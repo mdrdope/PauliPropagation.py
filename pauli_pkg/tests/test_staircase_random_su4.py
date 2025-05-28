@@ -49,7 +49,7 @@ def staircasetopology2d_qc(nx, ny):
     return qc
 
 
-@pytest.mark.parametrize("nx, ny", [(1,2), (1,3),(2, 2),(1,4),(1,5) ,(2, 3), (1,7),(2,4), (1,8)]) # , (3, 4), (2,6), (5,3),(3,6)])
+@pytest.mark.parametrize("nx, ny", [(1,2), (1,3),(2, 2),(1,4),(1,5) ,(2, 3),(1,6), (1,7),(2,4)]) # , (3, 4), (2,6), (5,3),(3,6)])
 def test_staircase_random_su4(nx, ny):
     """
     Compare expectation value of X on qubit 0 computed by
