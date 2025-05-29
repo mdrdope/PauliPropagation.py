@@ -9,6 +9,7 @@ __all__ = [
     "decode_pauli", 
     "weight_of_key",
     "random_su4",
+    "random_su2",
 ]
 
 def encode_pauli(p: np.typing.NDArray | "Pauli") -> int:
@@ -116,3 +117,31 @@ def random_su4() -> np.ndarray:
     # Enforce det=1
     q /= np.linalg.det(q) ** 0.25
     return q
+
+def random_su2() -> np.ndarray:
+    """
+    Generate a Haar-random 2x2 special-unitary matrix (det = 1).
+    
+    Returns
+    -------
+    np.ndarray
+        2x2 complex matrix in SU(2)
+        
+    Notes
+    -----
+    Uses random unit quaternion method from "Uniform random rotations" 
+    by Shepperd (1987)
+    """
+    # Generate random unit quaternion using method from 
+    # "Uniform random rotations" by Shepperd (1987)
+    u = np.random.random(3)
+    
+    # Convert to quaternion components
+    q0 = np.sqrt(1 - u[0]) * np.sin(2 * np.pi * u[1])
+    q1 = np.sqrt(1 - u[0]) * np.cos(2 * np.pi * u[1])
+    q2 = np.sqrt(u[0]) * np.sin(2 * np.pi * u[2])
+    q3 = np.sqrt(u[0]) * np.cos(2 * np.pi * u[2])
+    
+    # Convert quaternion to SU(2) matrix
+    return np.array([[q3 + 1j*q2, q1 + 1j*q0],
+                     [-q1 + 1j*q0, q3 - 1j*q2]], dtype=complex)

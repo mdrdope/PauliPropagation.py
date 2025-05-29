@@ -196,7 +196,7 @@ class PauliPropagator:
         # Set up parallel processing if requested
         executor = ProcessPoolExecutor(max_workers=_MAX_WORKERS) if use_parallel else None
         try:
-            for gate_name, qidx, extra_args in tqdm(ops, desc=f"Propagating, k:{max_weight}", total=len(ops)):
+            for gate_name, qidx, extra_args in tqdm(ops, desc=f"Propagating, max weight: {max_weight}", total=len(ops)):
                 
                 # For small numbers of terms or if parallel is disabled, process sequentially
                 if not use_parallel or len(current_terms_data) < _PARALLEL_THRESHOLD:

@@ -15,8 +15,6 @@ Notes
 - All gates return List[PauliTerm] for consistency
 """
 
-
-
 import math
 import numpy as np
 np.dtype(np.float64)  
@@ -150,7 +148,7 @@ class QuantumGate:
 @QuantumGate.register_gate("x")
 def x_gate(pauli_term: PauliTerm, q: int) -> List[PauliTerm]:
     """
-    Implement Pauli-X gate propagation: X† P X.
+    Implement Pauli-X gate propagation: X�? P X.
     
     Parameters
     ----------
@@ -182,7 +180,7 @@ def x_gate(pauli_term: PauliTerm, q: int) -> List[PauliTerm]:
 @QuantumGate.register_gate("y")
 def y_gate(pauli_term: PauliTerm, q: int) -> List[PauliTerm]:
     """
-    Implement Pauli-Y gate propagation: Y† P Y.
+    Implement Pauli-Y gate propagation: Y�? P Y.
     
     Parameters
     ----------
@@ -214,7 +212,7 @@ def y_gate(pauli_term: PauliTerm, q: int) -> List[PauliTerm]:
 @QuantumGate.register_gate("z")
 def z_gate(pauli_term: PauliTerm, q: int) -> List[PauliTerm]:
     """
-    Implement Pauli-Z gate propagation: Z† P Z.
+    Implement Pauli-Z gate propagation: Z�? P Z.
     
     Parameters
     ----------
@@ -320,7 +318,7 @@ def t_gate(pauli_term: PauliTerm, q: int) -> List[PauliTerm]:
 @QuantumGate.register_gate("rx")
 def rx_gate(pauli_term: PauliTerm, q: int, theta: float) -> List[PauliTerm]:
     """
-    Implement Rx(θ) Pauli propagation: Rx(θ)† P Rx(θ).
+    Implement Rx(θ) Pauli propagation: Rx(θ)�? P Rx(θ).
     
     Parameters
     ----------
@@ -339,10 +337,10 @@ def rx_gate(pauli_term: PauliTerm, q: int, theta: float) -> List[PauliTerm]:
     Notes
     -----
     Transformation mapping:
-      I → I
-      X → X
-      Z → cos(θ)·Z + sin(θ)·Y
-      Y → cos(θ)·Y - sin(θ)·Z
+      I �? I
+      X �? X
+      Z �? cos(θ)·Z + sin(θ)·Y
+      Y �? cos(θ)·Y - sin(θ)·Z
     """
     coeff, key, n = pauli_term.coeff, pauli_term.key, pauli_term.n
     x = (key >> q)       & 1
@@ -372,7 +370,7 @@ QuantumGate.register_param_extractor("rx", lambda instruction: (instruction.oper
 @QuantumGate.register_gate("ry")
 def ry_gate(pauli_term: PauliTerm, q: int, theta: float) -> List[PauliTerm]:
     """
-    Implement Ry(θ) Pauli propagation: Ry(θ)† P Ry(θ).
+    Implement Ry(θ) Pauli propagation: Ry(θ)�? P Ry(θ).
     
     Parameters
     ----------
@@ -391,10 +389,10 @@ def ry_gate(pauli_term: PauliTerm, q: int, theta: float) -> List[PauliTerm]:
     Notes
     -----
     Transformation mapping:
-      I → I
-      Y → Y
-      X → cos(θ)·X + sin(θ)·Z
-      Z → cos(θ)·Z - sin(θ)·X
+      I �? I
+      Y �? Y
+      X �? cos(θ)·X + sin(θ)·Z
+      Z �? cos(θ)·Z - sin(θ)·X
     """
     coeff, key, n = pauli_term.coeff, pauli_term.key, pauli_term.n
     x = (key >> q)       & 1
@@ -423,7 +421,7 @@ QuantumGate.register_param_extractor("ry", lambda instruction: (instruction.oper
 @QuantumGate.register_gate("rz")
 def rz_gate(pauli_term: PauliTerm, q: int, theta: float) -> List[PauliTerm]:
     """
-    Implement Rz(θ) Pauli propagation: Rz(θ)† P Rz(θ).
+    Implement Rz(θ) Pauli propagation: Rz(θ)�? P Rz(θ).
     
     Parameters
     ----------
@@ -442,10 +440,10 @@ def rz_gate(pauli_term: PauliTerm, q: int, theta: float) -> List[PauliTerm]:
     Notes
     -----
     Transformation mapping:
-      I → I
-      Z → Z
-      X → cos(θ)·X - sin(θ)·Y
-      Y → cos(θ)·Y + sin(θ)·X
+      I �? I
+      Z �? Z
+      X �? cos(θ)·X - sin(θ)·Y
+      Y �? cos(θ)·Y + sin(θ)·X
     """
     coeff, key, n = pauli_term.coeff, pauli_term.key, pauli_term.n
     x = (key >> q)       & 1
@@ -494,7 +492,7 @@ def s_gate(pauli_term: PauliTerm, q: int) -> List[PauliTerm]:
 @QuantumGate.register_gate("sdg")
 def sdg_gate(pauli_term: PauliTerm, q: int) -> List[PauliTerm]:
     """
-    Implement S† (S-dagger) gate Pauli propagation: S† = Rz(-π/2).
+    Implement S�? (S-dagger) gate Pauli propagation: S�? = Rz(-π/2).
     
     Parameters
     ----------
@@ -534,7 +532,7 @@ def sx_gate(pauli_term: PauliTerm, q: int) -> List[PauliTerm]:
 @QuantumGate.register_gate("sxdg")
 def sxdg_gate(pauli_term: PauliTerm, q: int) -> List[PauliTerm]:
     """
-    Implement SX† (SX-dagger) gate Pauli propagation: SX† = Rx(-π/2).
+    Implement SX�? (SX-dagger) gate Pauli propagation: SX�? = Rx(-π/2).
     
     Parameters
     ----------
@@ -549,6 +547,85 @@ def sxdg_gate(pauli_term: PauliTerm, q: int) -> List[PauliTerm]:
         Output Pauli terms
     """
     return rx_gate(pauli_term, q, -math.pi/2)
+
+
+_SINGLE_PAULI = np.stack([np.eye(2, dtype=complex), # Pre-compute single-qubit Pauli matrices for SU(2) operations
+                          np.array([[0, 1], [1, 0]], dtype=complex),  
+                          np.array([[0, -1j], [1j, 0]], dtype=complex), 
+                          np.array([[1, 0], [0, -1]], dtype=complex)])
+
+@QuantumGate.register_gate("su2")
+def su2_gate(pauli_term: PauliTerm, q: int, mat: np.ndarray) -> List[PauliTerm]:
+    """
+    Implement arbitrary single-qubit gate Pauli propagation.
+    
+    Parameters
+    ----------
+    pauli_term : PauliTerm
+        Input Pauli term
+    q : int
+        Target qubit index
+    mat : np.ndarray
+        2x2 unitary matrix
+        
+    Returns
+    -------
+    List[PauliTerm]
+        List of output Pauli terms
+        
+    Notes
+    -----
+    This gate implements U†PU for any single-qubit unitary U by expanding
+    in the Pauli basis: U†PU = Σ αᵢ Pᵢ where P ∈ {I,X,Y,Z}.
+    """
+    coeff = pauli_term.coeff
+    key = pauli_term.key
+    n = pauli_term.n
+    
+    # Extract X and Z bits for target qubit
+    x = (key >> q) & 1
+    z = (key >> (n+q)) & 1
+    
+    # Calculate index into single-qubit Pauli basis
+    # I=0, X=1, Y=2, Z=3 using code_from_bits logic
+    beta_idx = _code_from_bits(z, x)
+    
+    # Conjugate with unitary matrix: U† P U
+    conj = mat.conj().T @ _SINGLE_PAULI[beta_idx] @ mat
+    
+    # Calculate coefficients in Pauli basis using einsum (like su4_gate)
+    # α_i = (1/2) * Tr(P_i† * (U† P U))
+    coeffs = 0.5 * np.einsum('aij,ij->a', _SINGLE_PAULI.conj(), conj)
+    
+    # Build output terms
+    c_arr = coeff * coeffs
+    mask = (np.abs(c_arr.real) + np.abs(c_arr.imag)) >= 1e-12
+    significant_idxs = np.nonzero(mask)[0]
+    
+    result = []
+    for alpha in significant_idxs:
+        c = c_arr[alpha]
+        new_key = key
+        
+        # Extract new Pauli operator bits
+        z_new, x_new = _bits_from_code(alpha)
+        
+        # Update key with new X and Z bits for target qubit
+        if ((new_key >> q) & 1) != x_new:
+            new_key ^= 1 << q
+        if ((new_key >> (n+q)) & 1) != z_new:
+            new_key ^= 1 << (n+q)
+        
+        # Clean numerical errors in imaginary part
+        if abs(c.imag) < 1e-12:
+            c = c.real + 0j
+            
+        result.append(PauliTerm(c, new_key, n))
+    
+    return result
+
+# Register parameter extractor for su2 gate
+QuantumGate.register_param_extractor("su2", lambda instruction: (instruction.operation.to_matrix(),))
 
 
 # ------------------------------------------------------------------------------------------------------------------------
@@ -604,7 +681,7 @@ def cx_gate(pauli_term: PauliTerm, ctrl: int, tgt: int) -> List[PauliTerm]:
 @QuantumGate.register_gate("cy")
 def cy_gate(pauli_term: PauliTerm, ctrl: int, tgt: int) -> List[PauliTerm]:
     """
-    Implement Controlled-Y gate Pauli propagation: U = CY, return U† P U.
+    Implement Controlled-Y gate Pauli propagation: U = CY, return U�? P U.
 
     Parameters
     ----------
@@ -658,7 +735,7 @@ def cy_gate(pauli_term: PauliTerm, ctrl: int, tgt: int) -> List[PauliTerm]:
 @QuantumGate.register_gate("cz")
 def cz_gate(pauli_term: PauliTerm, ctrl: int, tgt: int) -> List[PauliTerm]:
     """
-    Controlled-Z gate Pauli propagation: U = CZ, return U† P U.
+    Controlled-Z gate Pauli propagation: U = CZ, return U�? P U.
     
     Parameters
     ----------
@@ -771,9 +848,9 @@ def crx_gate(pauli_term: PauliTerm, ctrl: int, tgt: int, theta: float) -> List[P
         
     Notes
     -----
-    Implements U = |0⟩⟨0|_ctrl ⊗ I_tgt + |1⟩⟨1|_ctrl ⊗ Rx(θ)_tgt
+    Implements U = |0⟩⟨0|_ctrl �? I_tgt + |1⟩⟨1|_ctrl �? Rx(θ)_tgt
     Matrix constructed in (tgt,ctrl) order for su4_gate:
-    mat = Rx_tgt ⊗ |1⟩⟨1|_ctrl + I_tgt ⊗ |0⟩⟨0|_ctrl
+    mat = Rx_tgt �? |1⟩⟨1|_ctrl + I_tgt �? |0⟩⟨0|_ctrl
     """
     # 2×2 basis matrices
     I2 = np.eye(2, dtype=complex)
@@ -817,8 +894,8 @@ def cry_gate(pauli_term: PauliTerm, ctrl: int, tgt: int, theta: float) -> List[P
         
     Notes
     -----
-    Implements U = |0⟩⟨0|_ctrl ⊗ I_tgt + |1⟩⟨1|_ctrl ⊗ Ry(θ)_tgt
-    Matrix constructed in (tgt,ctrl) order: mat = Ry_tgt ⊗ P1_ctrl + I_tgt ⊗ P0_ctrl
+    Implements U = |0⟩⟨0|_ctrl �? I_tgt + |1⟩⟨1|_ctrl �? Ry(θ)_tgt
+    Matrix constructed in (tgt,ctrl) order: mat = Ry_tgt �? P1_ctrl + I_tgt �? P0_ctrl
     """
     I2 = np.eye(2, dtype=complex)
     Y  = np.array([[0,-1j],[1j,0]], dtype=complex)
@@ -858,8 +935,8 @@ def crz_gate(pauli_term: PauliTerm, ctrl: int, tgt: int, theta: float) -> List[P
         
     Notes
     -----
-    Implements U = |0⟩⟨0|_ctrl ⊗ I_tgt + |1⟩⟨1|_ctrl ⊗ Rz(θ)_tgt
-    Matrix constructed in (tgt,ctrl) order: mat = Rz_tgt ⊗ P1_ctrl + I_tgt ⊗ P0_ctrl
+    Implements U = |0⟩⟨0|_ctrl �? I_tgt + |1⟩⟨1|_ctrl �? Rz(θ)_tgt
+    Matrix constructed in (tgt,ctrl) order: mat = Rz_tgt �? P1_ctrl + I_tgt �? P0_ctrl
     """
     I2 = np.eye(2, dtype=complex)
     Z  = np.array([[1,0],[0,-1]], dtype=complex)
@@ -1003,6 +1080,7 @@ def rzz_gate(pauli_term: PauliTerm, q1: int, q2: int, theta: float) -> List[Paul
 # Register parameter extractor for rzz gate
 QuantumGate.register_param_extractor("rzz", lambda instruction: (instruction.operation.params[0],))
 
+
 @QuantumGate.register_gate("su4")
 def su4_gate(pauli_term: PauliTerm, q1: int, q2: int, mat: np.ndarray) -> List[PauliTerm]:
     """
@@ -1068,7 +1146,7 @@ def su4_gate(pauli_term: PauliTerm, q1: int, q2: int, mat: np.ndarray) -> List[P
         if ((new_key >> (n+q2)) & 1) != z2:
             new_key ^= 1 << (n+q2)
 
-        # Theoretically, U† P U Pauli expansion coefficients should be real (since result is Hermitian)
+        # Theoretically, U�? P U Pauli expansion coefficients should be real (since result is Hermitian)
         # But numerical computation may produce small imaginary parts, we keep complex but clean numerical errors
         if abs(c.imag) < 1e-12:  # Numerical error threshold
             c = c.real + 0j  # Clean small imaginary parts, keep complex type
@@ -1101,7 +1179,7 @@ def swap_gate(pauli_term: PauliTerm, q1: int, q2: int) -> List[PauliTerm]:
         
     Notes
     -----
-    Implements U = SWAP(q1,q2), returns U† P U
+    Implements U = SWAP(q1,q2), returns U�? P U
     """
     coeff, key, n = pauli_term.coeff, pauli_term.key, pauli_term.n
     if q1 == q2:
@@ -1146,7 +1224,7 @@ def ccx_gate(pauli_term: PauliTerm,
              ctrl2: int,
              tgt:   int) -> List[PauliTerm]:
     """
-    Toffoli (CCX) gate Pauli propagation: U = CCX, return U† P U.
+    Toffoli (CCX) gate Pauli propagation: U = CCX, return U�? P U.
     
     Parameters
     ----------
@@ -1197,7 +1275,7 @@ def ccx_gate(pauli_term: PauliTerm,
             lambda t: rz_gate(t, ctrl2,-math.pi/4),# tdg ctrl2
             lambda t: cx_gate(t, ctrl1, ctrl2)]
 
-    # Backward propagation: apply each step's U† P U in reverse order
+    # Backward propagation: apply each step's U�? P U in reverse order
     for op in reversed(ops):
         next_terms: List[PauliTerm] = []
         for trm in terms:

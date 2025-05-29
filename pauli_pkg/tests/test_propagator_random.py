@@ -8,7 +8,7 @@ from qiskit.circuit.library import UnitaryGate
 from qiskit.quantum_info import Pauli, Statevector
 
 from pauli_propagation import PauliTerm, PauliPropagator
-from pauli_propagation.utils import encode_pauli, random_su4
+from pauli_propagation.utils import encode_pauli, random_su4, random_su2
 
 SYMS_STATE = "01+-rl"
 SYMS_PAULI = "IXYZ"
@@ -31,6 +31,13 @@ def _add_random_su4(qc, ctrl, tgt):
     gate = UnitaryGate(U, label="randSU4")
     gate._name = "su4"
     qc.append(gate, [ctrl, tgt])
+
+def _add_random_su2(qc, q):
+    """Add a random SU(2) gate to the circuit on qubit q."""
+    U = random_su2()
+    gate = UnitaryGate(U, label="randSU2")
+    gate._name = "su2"
+    qc.append(gate, [q])
 
 def _add_random_rotation(qc, q, gate_type):
     """Add a random rotation gate to the circuit."""
@@ -78,7 +85,8 @@ def build_random_circuit(n, gate_count):
                           lambda q: qc.sxdg(q),
                           lambda q: _add_random_rotation(qc, q, "rx"),
                           lambda q: _add_random_rotation(qc, q, "ry"),
-                          lambda q: _add_random_rotation(qc, q, "rz")]
+                          lambda q: _add_random_rotation(qc, q, "rz"),
+                          lambda q: _add_random_su2(qc, q)]
     
     two_qubit_gates = [lambda ctrl, tgt: qc.cx(ctrl, tgt),
                        lambda ctrl, tgt: qc.cz(ctrl, tgt),
@@ -95,7 +103,6 @@ def build_random_circuit(n, gate_count):
                        lambda ctrl, tgt: _add_random_controlled_rotation(qc, ctrl, tgt, "crz")]
     
     three_qubit_gates = [lambda ctrl1, ctrl2, tgt: qc.ccx(ctrl1, ctrl2, tgt)]
-        
     
     for _ in range(gate_count):
         # Choose between single-qubit, two-qubit, and three-qubit gates

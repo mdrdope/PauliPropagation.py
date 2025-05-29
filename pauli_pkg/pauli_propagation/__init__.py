@@ -21,6 +21,11 @@ from .utils        import (
     decode_pauli,
     weight_of_key,
     random_su4,
+    random_su2,
+)
+from .decomposition import (
+    su4_kak_decomp,
+    su4_kak_reconstruct,
 )
 
 __all__ = [
@@ -35,6 +40,9 @@ __all__ = [
     "decode_pauli",
     "weight_of_key",
     "random_su4",
+    "random_su2",
+    "su4_kak_decomp",
+    "su4_kak_reconstruct",
 ]
 
 # Version

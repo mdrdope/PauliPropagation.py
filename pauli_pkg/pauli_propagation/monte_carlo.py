@@ -276,95 +276,95 @@ class MonteCarlo:
         
         return results
 
-    def print_mse_summary(self, 
-                         mse_results: Dict[str, Dict[int, float]], 
-                         max_k: int = 6) -> None:
-        """
-        打印MSE结果的摘要。
+    # def print_mse_summary(self, 
+    #                      mse_results: Dict[str, Dict[int, float]], 
+    #                      max_k: int = 6) -> None:
+    #     """
+    #     打印MSE结果的摘要。
         
-        Parameters
-        ----------
-        mse_results : Dict[str, Dict[int, float]]
-            estimate_mse_for_truncation方法返回的结果
-        max_k : int, optional
-            最大权重阈值，默认为6
-        """
-        print("Monte Carlo MSE 估计结果:")
-        print("=" * 50)
+    #     Parameters
+    #     ----------
+    #     mse_results : Dict[str, Dict[int, float]]
+    #         estimate_mse_for_truncation方法返回的结果
+    #     max_k : int, optional
+    #         最大权重阈值，默认为6
+    #     """
+    #     print("Monte Carlo MSE 估计结果:")
+    #     print("=" * 50)
         
-        print("\n累积MSE (权重 > k 的路径):")
-        for k in range(0, max_k + 1):
-            mse_val = mse_results['cumulative'].get(k, 0.0)
-            print(f"  权重 > {k}: {mse_val:.6e}")
+    #     print("\n累积MSE (权重 > k 的路径):")
+    #     for k in range(0, max_k + 1):
+    #         mse_val = mse_results['cumulative'].get(k, 0.0)
+    #         print(f"  权重 > {k}: {mse_val:.6e}")
         
-        print("\n单层MSE (权重 == k 的路径):")
-        for k in range(0, max_k + 1):
-            mse_val = mse_results['layer'].get(k, 0.0)
-            print(f"  权重 == {k}: {mse_val:.6e}")
+    #     print("\n单层MSE (权重 == k 的路径):")
+    #     for k in range(0, max_k + 1):
+    #         mse_val = mse_results['layer'].get(k, 0.0)
+    #         print(f"  权重 == {k}: {mse_val:.6e}")
 
-    def get_sample_count(self) -> int:
-        """
-        Get the number of stored samples.
+    # def get_sample_count(self) -> int:
+    #     """
+    #     Get the number of stored samples.
         
-        Returns
-        -------
-        int
-            Number of Monte Carlo samples stored
-        """
-        return len(self._sampled_last_paulis)
+    #     Returns
+    #     -------
+    #     int
+    #         Number of Monte Carlo samples stored
+    #     """
+    #     return len(self._sampled_last_paulis)
 
-    def get_weight_exceeded_statistics(self, threshold: int) -> float:
-        """
-        Get the fraction of paths that exceeded a given weight threshold.
+    # def get_weight_exceeded_statistics(self, threshold: int) -> float:
+    #     """
+    #     Get the fraction of paths that exceeded a given weight threshold.
         
-        Parameters
-        ----------
-        threshold : int
-            Weight threshold to check (0-6)
+    #     Parameters
+    #     ----------
+    #     threshold : int
+    #         Weight threshold to check (0-6)
             
-        Returns
-        -------
-        float
-            Fraction of paths that exceeded the threshold
-        """
-        if not self._weight_exceeded_details:
-            return 0.0
+    #     Returns
+    #     -------
+    #     float
+    #         Fraction of paths that exceeded the threshold
+    #     """
+    #     if not self._weight_exceeded_details:
+    #         return 0.0
         
-        if threshold < 0 or threshold >= len(self._weight_exceeded_details[0]):
-            raise ValueError(f"Threshold must be between 0 and {len(self._weight_exceeded_details[0])-1}")
+    #     if threshold < 0 or threshold >= len(self._weight_exceeded_details[0]):
+    #         raise ValueError(f"Threshold must be between 0 and {len(self._weight_exceeded_details[0])-1}")
         
-        exceeded_count = sum(1 for flags in self._weight_exceeded_details if flags[threshold])
-        return exceeded_count / len(self._weight_exceeded_details)
+    #     exceeded_count = sum(1 for flags in self._weight_exceeded_details if flags[threshold])
+    #     return exceeded_count / len(self._weight_exceeded_details)
 
-    def get_average_final_weight(self) -> float:
-        """
-        Get the average weight of final Pauli terms.
+    # def get_average_final_weight(self) -> float:
+    #     """
+    #     Get the average weight of final Pauli terms.
         
-        Returns
-        -------
-        float
-            Average weight of final Pauli terms
-        """
-        if not self._last_pauli_weights:
-            return 0.0
-        return np.mean(self._last_pauli_weights)
+    #     Returns
+    #     -------
+    #     float
+    #         Average weight of final Pauli terms
+    #     """
+    #     if not self._last_pauli_weights:
+    #         return 0.0
+    #     return np.mean(self._last_pauli_weights)
 
-    def get_coefficient_statistics(self) -> Dict[str, float]:
-        """
-        Get statistics about the coefficient magnitudes.
+    # def get_coefficient_statistics(self) -> Dict[str, float]:
+    #     """
+    #     Get statistics about the coefficient magnitudes.
         
-        Returns
-        -------
-        Dict[str, float]
-            Dictionary containing mean, std, min, max of |coeff|^2
-        """
-        if not self._coeff_sqs:
-            return {"mean": 0.0, "std": 0.0, "min": 0.0, "max": 0.0}
+    #     Returns
+    #     -------
+    #     Dict[str, float]
+    #         Dictionary containing mean, std, min, max of |coeff|^2
+    #     """
+    #     if not self._coeff_sqs:
+    #         return {"mean": 0.0, "std": 0.0, "min": 0.0, "max": 0.0}
         
-        coeff_array = np.array(self._coeff_sqs)
-        return {"mean": np.mean(coeff_array),
-                "std": np.std(coeff_array),
-                "min": np.min(coeff_array),
-                "max": np.max(coeff_array)}
+    #     coeff_array = np.array(self._coeff_sqs)
+    #     return {"mean": np.mean(coeff_array),
+    #             "std": np.std(coeff_array),
+    #             "min": np.min(coeff_array),
+    #             "max": np.max(coeff_array)}
             
 
