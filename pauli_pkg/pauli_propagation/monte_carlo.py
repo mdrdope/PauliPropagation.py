@@ -14,7 +14,7 @@ from concurrent.futures import ProcessPoolExecutor, as_completed
 
 # Threshold for parallel processing and maximum number of worker processes
 _PARALLEL_THRESHOLD = 2000
-_MAX_WORKERS = 8 # or os.cpu_count()
+_MAX_WORKERS = 2 # or os.cpu_count()
 
 
 class MonteCarlo:
@@ -173,9 +173,7 @@ class MonteCarlo:
         for instr in reversed(self.qc.data):
             gate_name = instr.operation.name
             qidx = tuple(self.q2i[q] for q in instr.qubits) 
-            extra = ()
-            if gate_name == "su4" and hasattr(instr.operation, "to_matrix"):
-                extra = (instr.operation.to_matrix(),)
+            extra = QuantumGate.extract_params(gate_name, instr)
             ops.append((gate_name, qidx, extra))
 
         # Always use parallel processing
@@ -216,51 +214,51 @@ class MonteCarlo:
                                   product_label: str,
                                   max_k: int = 6) -> Dict[str, Dict[int, float]]:
         """
-        使用Monte Carlo采样估计截断误差的MSE。
+        Estimate MSE for truncation using Monte Carlo sampling.
         
-        这个方法计算两种类型的MSE：
-        1. 累积MSE：权重 > k 的所有路径的贡献
-        2. 单层MSE：权重 == k 的路径的贡献
+        This method computes two types of MSE:
+        1. Cumulative MSE: contributions from all paths with weight > k
+        2. Layer MSE: contributions from paths with weight == k
         
         Parameters
         ----------
         propagator : object
-            具有expectation_pauli_sum方法的传播器对象
+            Propagator object with expectation_pauli_sum method
         product_label : str
-            计算期望值时使用的产品标签（通常是"0"*n）
+            Product state label for expectation calculation (usually "0"*n)
         max_k : int, optional
-            最大权重阈值，默认为6
+            Maximum weight threshold, default is 6
             
         Returns
         -------
         Dict[str, Dict[int, float]]
-            包含两个键的字典：
-            - 'cumulative': {k: mse_value} 权重 > k 的累积MSE
-            - 'layer': {k: mse_value} 权重 == k 的单层MSE
+            Dictionary with two keys:
+            - 'cumulative': {k: mse_value} for weight > k cumulative MSE
+            - 'layer': {k: mse_value} for weight == k layer MSE
         """
         if not self._sampled_last_paulis:
-            raise ValueError("没有可用的Monte Carlo采样数据。请先调用monte_carlo_samples方法。")
+            raise ValueError("No Monte Carlo sampling data available. Please call monte_carlo_samples method first.")
         
         M = len(self._sampled_last_paulis)
         
-        # 1) 预先计算每条路径的 d_i^2
+        # 1) Pre-compute d_i^2 for each path
         d_list = []
         for pauli_term in self._sampled_last_paulis:
-            # 为每个采样的Pauli项创建单项列表
+            # Create single-term list for each sampled Pauli term
             single_term = [PauliTerm(1.0, pauli_term.key, pauli_term.n)]
             d_val = propagator.expectation_pauli_sum(single_term, product_label)
             d_list.append(d_val * d_val)
         d_vals = np.array(d_list)
         
-        # 2) 转换权重超出详情和权重数组
+        # 2) Convert weight exceeded flags and weight arrays
         flags = np.array(self._weight_exceeded_details, dtype=bool)  # shape = (M, 7)
         weights = np.array(self._last_pauli_weights, dtype=int)      # shape = (M,)
         
-        # 3) 计算MSE
-        results = {'cumulative': {},  # 累积MSE：权重 > k
-                   'layer': {}}     # 单层MSE：权重 == k
+        # 3) Calculate MSE
+        results = {'cumulative': {},  # Cumulative MSE: weight > k
+                   'layer': {}}     # Layer MSE: weight == k
         
-        # 累积MSE：权重 > k 的所有路径
+        # Cumulative MSE: all paths with weight > k
         for k in range(0, max_k + 1):
             if k < flags.shape[1]:
                 mse_cumulative = d_vals[flags[:, k]].sum() / M
@@ -268,103 +266,10 @@ class MonteCarlo:
             else:
                 results['cumulative'][k] = 0.0
         
-        # 单层MSE：权重 == k 的路径
+        # Layer MSE: paths with weight == k
         for k in range(0, max_k + 1):
             mask_eq = (weights == k)
             mse_layer = d_vals[mask_eq].sum() / M
             results['layer'][k] = mse_layer
         
         return results
-
-    # def print_mse_summary(self, 
-    #                      mse_results: Dict[str, Dict[int, float]], 
-    #                      max_k: int = 6) -> None:
-    #     """
-    #     打印MSE结果的摘要。
-        
-    #     Parameters
-    #     ----------
-    #     mse_results : Dict[str, Dict[int, float]]
-    #         estimate_mse_for_truncation方法返回的结果
-    #     max_k : int, optional
-    #         最大权重阈值，默认为6
-    #     """
-    #     print("Monte Carlo MSE 估计结果:")
-    #     print("=" * 50)
-        
-    #     print("\n累积MSE (权重 > k 的路径):")
-    #     for k in range(0, max_k + 1):
-    #         mse_val = mse_results['cumulative'].get(k, 0.0)
-    #         print(f"  权重 > {k}: {mse_val:.6e}")
-        
-    #     print("\n单层MSE (权重 == k 的路径):")
-    #     for k in range(0, max_k + 1):
-    #         mse_val = mse_results['layer'].get(k, 0.0)
-    #         print(f"  权重 == {k}: {mse_val:.6e}")
-
-    # def get_sample_count(self) -> int:
-    #     """
-    #     Get the number of stored samples.
-        
-    #     Returns
-    #     -------
-    #     int
-    #         Number of Monte Carlo samples stored
-    #     """
-    #     return len(self._sampled_last_paulis)
-
-    # def get_weight_exceeded_statistics(self, threshold: int) -> float:
-    #     """
-    #     Get the fraction of paths that exceeded a given weight threshold.
-        
-    #     Parameters
-    #     ----------
-    #     threshold : int
-    #         Weight threshold to check (0-6)
-            
-    #     Returns
-    #     -------
-    #     float
-    #         Fraction of paths that exceeded the threshold
-    #     """
-    #     if not self._weight_exceeded_details:
-    #         return 0.0
-        
-    #     if threshold < 0 or threshold >= len(self._weight_exceeded_details[0]):
-    #         raise ValueError(f"Threshold must be between 0 and {len(self._weight_exceeded_details[0])-1}")
-        
-    #     exceeded_count = sum(1 for flags in self._weight_exceeded_details if flags[threshold])
-    #     return exceeded_count / len(self._weight_exceeded_details)
-
-    # def get_average_final_weight(self) -> float:
-    #     """
-    #     Get the average weight of final Pauli terms.
-        
-    #     Returns
-    #     -------
-    #     float
-    #         Average weight of final Pauli terms
-    #     """
-    #     if not self._last_pauli_weights:
-    #         return 0.0
-    #     return np.mean(self._last_pauli_weights)
-
-    # def get_coefficient_statistics(self) -> Dict[str, float]:
-    #     """
-    #     Get statistics about the coefficient magnitudes.
-        
-    #     Returns
-    #     -------
-    #     Dict[str, float]
-    #         Dictionary containing mean, std, min, max of |coeff|^2
-    #     """
-    #     if not self._coeff_sqs:
-    #         return {"mean": 0.0, "std": 0.0, "min": 0.0, "max": 0.0}
-        
-    #     coeff_array = np.array(self._coeff_sqs)
-    #     return {"mean": np.mean(coeff_array),
-    #             "std": np.std(coeff_array),
-    #             "min": np.min(coeff_array),
-    #             "max": np.max(coeff_array)}
-            
-

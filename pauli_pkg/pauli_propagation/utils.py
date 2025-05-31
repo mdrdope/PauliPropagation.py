@@ -3,13 +3,17 @@
 # pauli_pkg/pauli_propagation/utils.py
 from __future__ import annotations
 import numpy as np
+import random
 from qiskit.quantum_info import Pauli
+from functools import lru_cache
 __all__ = [
     "encode_pauli",
     "decode_pauli", 
     "weight_of_key",
     "random_su4",
     "random_su2",
+    "random_state_label",
+    "random_pauli_label",
 ]
 
 def encode_pauli(p: np.typing.NDArray | "Pauli") -> int:
@@ -79,7 +83,9 @@ def _weight_of_key(key: int, n: int) -> int:
 
 def weight_of_key(key: int, n: int) -> int:
     """
-    Calculate Pauli weight = number of non-identity factors.
+    Calculate the weight (number of non-identity Paulis) of a Pauli key.
+    
+    Uses optimized bit operations for better performance.
     
     Parameters
     ----------
@@ -91,9 +97,16 @@ def weight_of_key(key: int, n: int) -> int:
     Returns
     -------
     int
-        Number of non-identity Pauli factors
+        Weight of the Pauli operator
     """
-    return _weight_of_key(key, n)
+    # Optimized version using bit manipulation
+    # Extract X bits (lower n bits) and Z bits (upper n bits)
+    x_bits = key & ((1 << n) - 1)  # Lower n bits
+    z_bits = key >> n              # Upper n bits
+    
+    # Count non-identity Paulis: any qubit with X or Z (or both) set
+    non_identity_mask = x_bits | z_bits
+    return bin(non_identity_mask).count('1')
 
 def random_su4() -> np.ndarray:
     """
@@ -145,3 +158,73 @@ def random_su2() -> np.ndarray:
     # Convert quaternion to SU(2) matrix
     return np.array([[q3 + 1j*q2, q1 + 1j*q0],
                      [-q1 + 1j*q0, q3 - 1j*q2]], dtype=complex)
+
+# »º´ædecode_pauli½á¹û
+@lru_cache(maxsize=1024)
+def decode_pauli_cached(key: int, n: int) -> 'PauliOp':
+    """
+    Cached version of decode_pauli for frequently used keys.
+    """
+    return decode_pauli(key, n)
+
+
+# Random state and Pauli generation utilities
+SYMS_STATE = "01+-rl"
+SYMS_PAULI = "IXYZ"
+
+
+def random_state_label(n):
+    """
+    Generate a random product state label of length n.
+    
+    Parameters
+    ----------
+    n : int
+        Length of the state label
+        
+    Returns
+    -------
+    str
+        Random product state label using symbols from "01+-rl"
+        
+    Examples
+    --------
+    >>> label = random_state_label(3)
+    >>> len(label)
+    3
+    >>> all(c in "01+-rl" for c in label)
+    True
+    """
+    return "".join(random.choice(SYMS_STATE) for _ in range(n))
+
+
+def random_pauli_label(n):
+    """
+    Generate a random non-identity Pauli label of length n.
+    
+    Parameters
+    ----------
+    n : int
+        Length of the Pauli label
+        
+    Returns
+    -------
+    str
+        Random Pauli label using symbols from "IXYZ", guaranteed to be non-identity
+        
+    Examples
+    --------
+    >>> label = random_pauli_label(3)
+    >>> len(label)
+    3
+    >>> all(c in "IXYZ" for c in label)
+    True
+    >>> # Guaranteed to have at least one non-I
+    >>> "X" in label or "Y" in label or "Z" in label
+    True
+    """
+    lbl = "".join(random.choice(SYMS_PAULI) for _ in range(n))
+    if set(lbl) == {"I"}:
+        pos = random.randrange(n)
+        lbl = lbl[:pos] + random.choice("XYZ") + lbl[pos+1:]
+    return lbl

@@ -8,22 +8,10 @@ from qiskit.circuit.library import UnitaryGate
 from qiskit.quantum_info import Pauli, Statevector
 
 from pauli_propagation import PauliTerm, PauliPropagator
-from pauli_propagation.utils import encode_pauli, random_su4, random_su2
+from pauli_propagation.utils import encode_pauli, random_su4, random_su2, random_state_label, random_pauli_label
 
 SYMS_STATE = "01+-rl"
 SYMS_PAULI = "IXYZ"
-
-def random_state_label(n):
-    """Generate a random product state label of length n."""
-    return "".join(random.choice(SYMS_STATE) for _ in range(n))
-
-def random_pauli_label(n):
-    """Generate a random non-identity Pauli label of length n."""
-    lbl = "".join(random.choice(SYMS_PAULI) for _ in range(n))
-    if set(lbl) == {"I"}:
-        pos = random.randrange(n)
-        lbl = lbl[:pos] + random.choice("XYZ") + lbl[pos+1:]
-    return lbl
 
 def _add_random_su4(qc, ctrl, tgt):
     """Add a random SU(4) gate to the circuit on qubits ctrl and tgt."""

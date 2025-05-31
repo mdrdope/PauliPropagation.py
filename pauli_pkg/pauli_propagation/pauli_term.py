@@ -2,7 +2,7 @@
 
 # pauli_pkg/pauli_propagation/pauli_term.py
 from dataclasses import dataclass
-from .utils import decode_pauli, weight_of_key
+from .utils import decode_pauli, weight_of_key, decode_pauli_cached
 
 @dataclass(slots=True)
 class PauliTerm:
@@ -34,16 +34,24 @@ class PauliTerm:
     key:   int
     n:     int
 
-    def to_label(self) -> str:
+    def to_label(self, use_cache: bool = True) -> str:
         """
         Convert the Pauli operator to a human-readable string label.
+        
+        Parameters
+        ----------
+        use_cache : bool
+            Whether to use cached decode function for better performance
         
         Returns
         -------
         str
             String representation of the Pauli operator (e.g. 'IXYZ')
         """
-        return decode_pauli(self.key, self.n).to_label()
+        if use_cache:
+            return decode_pauli_cached(self.key, self.n).to_label()
+        else:
+            return decode_pauli(self.key, self.n).to_label()
 
     def __repr__(self) -> str:
         """

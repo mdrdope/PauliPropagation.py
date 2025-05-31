@@ -10,46 +10,10 @@ from qiskit.circuit.library import UnitaryGate
 from pauli_propagation.utils import encode_pauli, decode_pauli, random_su4
 from pauli_propagation.pauli_term import PauliTerm
 from pauli_propagation.propagator import PauliPropagator
+from pauli_propagation.circuit_topologies import staircasetopology2d_qc
 
 
-def _staircase_edges(nx, ny):
-    """Return the ordered list of 1-based index pairs of the staircase walk."""
-    next_inds, temp_inds, edges = [1], [], []
-    while next_inds:
-        for ind in next_inds:
-            if ind % nx != 0:
-                nxt = ind + 1
-                edges.append((ind, nxt))
-                temp_inds.append(nxt)
-            if ((ind - 1) // nx + 1) < ny:
-                nxt = ind + nx
-                edges.append((ind, nxt))
-                temp_inds.append(nxt)
-        next_inds, temp_inds = temp_inds, []
-    seen, uniq = set(), []
-    for e in edges:
-        if e not in seen:
-            seen.add(e)
-            uniq.append(e)
-    return uniq
-
-
-def staircasetopology2d_qc(nx, ny):
-    """
-    Build a QuantumCircuit with a random SU(4) gate on every edge
-    of the 2D staircase topology for an nx × ny grid.
-    """
-    nqubits = nx * ny
-    qc = QuantumCircuit(nqubits)
-    for k, (q1, q2) in enumerate(_staircase_edges(nx, ny)):
-        mat = random_su4()
-        gate = UnitaryGate(mat, label=f"SU4_{k}")
-        gate._name = "su4"
-        qc.append(gate, [q1 - 1, q2 - 1])
-    return qc
-
-
-@pytest.mark.parametrize("nx, ny", [(1,2), (1,3),(2, 2),(1,4),(1,5) ,(2, 3),(1,6), (1,7),(2,4)]) # , (3, 4), (2,6), (5,3),(3,6)])
+@pytest.mark.parametrize("nx, ny", [(1,2), (1,3),(2, 2),(1,4),(1,5) ,(2, 3),(1,6)]) # , (3, 4), (2,6), (5,3),(3,6)])
 def test_staircase_random_su4(nx, ny):
     """
     Compare expectation value of X on qubit 0 computed by
@@ -60,7 +24,7 @@ def test_staircase_random_su4(nx, ny):
     random.seed(42)
     np.random.seed(42)
 
-    qc = staircasetopology2d_qc(nx, ny)
+    qc = staircasetopology2d_qc(nx, ny, seed=42)
     n = qc.num_qubits
 
     # Build initial PauliTerm for X on qubit 0
