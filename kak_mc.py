@@ -14,7 +14,7 @@ from pauli_propagation import staircasetopology2d_qc
 # Parameters (you may override via command-line args or environment if desired)
 # =============================================================================
 # L_values: list of circuit depths to run Monte Carlo over
-L_values = [4]              # for example, only L=4; adjust as needed
+L_values = [1,2,3,4]              # for example, only L=4; adjust as needed
 nx, ny = 5, 5               # lattice size (5¡Á5 heavy-hex becomes 25 qubits)
 M = 10000 * 3          # total number of Monte Carlo samples
 max_kk = 6                  # maximum truncation weight k
