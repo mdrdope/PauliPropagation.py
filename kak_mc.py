@@ -16,7 +16,7 @@ from pauli_propagation import staircasetopology2d_qc
 # L_values: list of circuit depths to run Monte Carlo over
 L_values = [4]              # for example, only L=4; adjust as needed
 nx, ny = 5, 5               # lattice size (5¡Á5 heavy-hex becomes 25 qubits)
-M = 10000 * 200             # total number of Monte Carlo samples
+M = 10000 * 3          # total number of Monte Carlo samples
 max_kk = 6                  # maximum truncation weight k
 out_dir = "results"         # directory to store JSON output
 
@@ -38,10 +38,7 @@ for L in L_values:
 
     # 1) Monte Carlo sampling (all k share the same random seeds/weights)
     mc = MonteCarlo(qc_2d)
-    _, _, last_weights, _ = mc.monte_carlo_samples(
-        init_term=init_term,
-        M=M
-    )
+    _, _, last_weights, _ = mc.monte_carlo_samples(init_term=init_term,M=M)
 
     # 2) Compute weight histogram (counts & normalized probabilities)
     bins = np.arange(0.5, n + 1.5)  # integer bins for weights 1¡­n
