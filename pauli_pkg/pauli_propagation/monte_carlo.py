@@ -4,17 +4,15 @@
 import numpy as np
 from typing import List, Dict, Tuple, Set, Union
 from qiskit import QuantumCircuit
-import math
 from .pauli_term  import PauliTerm
 from .utils       import weight_of_key
-from .gates       import QuantumGate
+from .gates       import QuantumGate, TupleGate
 from tqdm.notebook import tqdm
 from concurrent.futures import ProcessPoolExecutor, as_completed
 
 
 # Threshold for parallel processing and maximum number of worker processes
-_PARALLEL_THRESHOLD = 2000
-_MAX_WORKERS = 2 # or os.cpu_count()
+_MAX_WORKERS = 8 # or os.cpu_count()
 
 
 class MonteCarlo:
@@ -67,6 +65,7 @@ class MonteCarlo:
         """
         Helper function for ProcessPoolExecutor to sample one Monte Carlo path.
         This staticmethod can be pickled for multiprocessing.
+        Uses tuple-based gates for maximum performance.
 
         Parameters
         ----------
@@ -78,7 +77,7 @@ class MonteCarlo:
         -------
         Tuple[complex, int, int, List[bool]]
             (last_coeff_unbiased, last_key, n, weight_exceeded_flags)
-            - last_coeff_unbiased: Φ_γ / |Φ_γ|^2, so that E[last_coeff_unbiased * d_γ] = Σ Φ_γ d_γ
+            - last_coeff_unbiased: 桅_纬 / |桅_纬|^2, so that E[last_coeff_unbiased * d_纬] = 危 桅_纬 d_纬
             - last_key: final Pauli key
             - n: number of qubits
             - weight_exceeded_flags: booleans for weight thresholds
@@ -92,24 +91,23 @@ class MonteCarlo:
         weight_thresholds = [0, 1, 2, 3, 4, 5, 6]
         weight_exceeded_flags = [False] * 7
 
-        # Check initial weight
-        init_term = PauliTerm(1.0, current_key, n)
-        init_weight = init_term.weight()
+        # Check initial weight using more efficient method
+        init_weight = weight_of_key(current_key, n)
         for i, threshold in enumerate(weight_thresholds):
             if init_weight > threshold:
                 weight_exceeded_flags[i] = True
 
-        # Propagate backwards through the circuit
+        # Propagate backwards through the circuit using tuple-based gates
         for gate_name, qidx, extra in ops:
-            gate_func = QuantumGate.get(gate_name)
-            inp = PauliTerm(1.0, current_key, n)
+            gate_func = TupleGate.get(gate_name)
+            current_tuple = (1.0, current_key, n)
 
             if extra:
-                out_terms = gate_func(inp, *qidx, *extra)
+                out_tuples = gate_func(current_tuple, *qidx, *extra)
             else:
-                out_terms = gate_func(inp, *qidx)
+                out_tuples = gate_func(current_tuple, *qidx)
 
-            branches = [(t.key, t.coeff) for t in out_terms]
+            branches = [(key, coeff) for coeff, key, _ in out_tuples]
             if not branches:
                 break
 
@@ -120,13 +118,13 @@ class MonteCarlo:
             current_key, amp = branches[idx]
             current_coeff *= amp
 
-            # Update weight flags
-            current_weight = PauliTerm(1.0, current_key, n).weight()
+            # Update weight flags using efficient weight calculation
+            current_weight = weight_of_key(current_key, n)
             for i, threshold in enumerate(weight_thresholds):
                 if current_weight > threshold:
                     weight_exceeded_flags[i] = True
 
-        # Compute unbiased estimator: Φ_γ / |Φ_γ|^2
+        # Compute unbiased estimator: 桅_纬 / |桅_纬|^2
         p = abs(current_coeff)**2
         if p > 0:
             last_coeff_unbiased = current_coeff / p
@@ -273,3 +271,96 @@ class MonteCarlo:
             results['layer'][k] = mse_layer
         
         return results
+
+    # def print_mse_summary(self, 
+    #                      mse_results: Dict[str, Dict[int, float]], 
+    #                      max_k: int = 6) -> None:
+    #     """
+    #     鎵撳嵃MSE缁撴灉鐨勬憳瑕併€?
+        
+    #     Parameters
+    #     ----------
+    #     mse_results : Dict[str, Dict[int, float]]
+    #         estimate_mse_for_truncation鏂规硶杩斿洖鐨勭粨鏋?
+    #     max_k : int, optional
+    #         鏈€澶ф潈閲嶉槇鍊硷紝榛樿?や负6
+    #     """
+    #     print("Monte Carlo MSE 浼拌?＄粨鏋?:")
+    #     print("=" * 50)
+        
+    #     print("\n绱?绉疢SE (鏉冮噸 > k 鐨勮矾寰?):")
+    #     for k in range(0, max_k + 1):
+    #         mse_val = mse_results['cumulative'].get(k, 0.0)
+    #         print(f"  鏉冮噸 > {k}: {mse_val:.6e}")
+        
+    #     print("\n鍗曞眰MSE (鏉冮噸 == k 鐨勮矾寰?):")
+    #     for k in range(0, max_k + 1):
+    #         mse_val = mse_results['layer'].get(k, 0.0)
+    #         print(f"  鏉冮噸 == {k}: {mse_val:.6e}")
+
+    # def get_sample_count(self) -> int:
+    #     """
+    #     Get the number of stored samples.
+        
+    #     Returns
+    #     -------
+    #     int
+    #         Number of Monte Carlo samples stored
+    #     """
+    #     return len(self._sampled_last_paulis)
+
+    # def get_weight_exceeded_statistics(self, threshold: int) -> float:
+    #     """
+    #     Get the fraction of paths that exceeded a given weight threshold.
+        
+    #     Parameters
+    #     ----------
+    #     threshold : int
+    #         Weight threshold to check (0-6)
+            
+    #     Returns
+    #     -------
+    #     float
+    #         Fraction of paths that exceeded the threshold
+    #     """
+    #     if not self._weight_exceeded_details:
+    #         return 0.0
+        
+    #     if threshold < 0 or threshold >= len(self._weight_exceeded_details[0]):
+    #         raise ValueError(f"Threshold must be between 0 and {len(self._weight_exceeded_details[0])-1}")
+        
+    #     exceeded_count = sum(1 for flags in self._weight_exceeded_details if flags[threshold])
+    #     return exceeded_count / len(self._weight_exceeded_details)
+
+    # def get_average_final_weight(self) -> float:
+    #     """
+    #     Get the average weight of final Pauli terms.
+        
+    #     Returns
+    #     -------
+    #     float
+    #         Average weight of final Pauli terms
+    #     """
+    #     if not self._last_pauli_weights:
+    #         return 0.0
+    #     return np.mean(self._last_pauli_weights)
+
+    # def get_coefficient_statistics(self) -> Dict[str, float]:
+    #     """
+    #     Get statistics about the coefficient magnitudes.
+        
+    #     Returns
+    #     -------
+    #     Dict[str, float]
+    #         Dictionary containing mean, std, min, max of |coeff|^2
+    #     """
+    #     if not self._coeff_sqs:
+    #         return {"mean": 0.0, "std": 0.0, "min": 0.0, "max": 0.0}
+        
+    #     coeff_array = np.array(self._coeff_sqs)
+    #     return {"mean": np.mean(coeff_array),
+    #             "std": np.std(coeff_array),
+    #             "min": np.min(coeff_array),
+    #             "max": np.max(coeff_array)}
+            
+

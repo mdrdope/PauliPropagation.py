@@ -103,7 +103,7 @@ def tfi_trotter_circuit(nqubits, nlayers, topology=None, start_with_ZZ=True, rx_
             qc.rzz(rzz_theta, q1 - 1, q2 - 1)
     
     # Middle layers
-    for layer in range(nlayers - 1):
+    for _ in range(nlayers - 1):
         # Add RX layer to all qubits
         for qubit in range(nqubits):
             qc.rx(rx_theta, qubit)

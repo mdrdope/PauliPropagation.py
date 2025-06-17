@@ -47,7 +47,7 @@ def su2_to_euler(U: np.ndarray) -> Tuple[float, float, float]:
     beta = 2 * np.arctan2(np.abs(U[1, 0]), np.abs(U[0, 0]))
     
     if np.abs(np.sin(beta/2)) < 1e-10:
-        # Special case: beta ¡Ö 0, U ¡Ö exp(i*alpha)*I
+        # Special case: beta â‰ˆ 0, U â‰ˆ exp(i*alpha)*I
         alpha = np.angle(U[0, 0]) * 2
         gamma = 0
     else:
