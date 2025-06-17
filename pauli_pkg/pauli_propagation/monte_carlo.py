@@ -2,7 +2,9 @@
 
 # pauli_pkg/pauli_propagation/monte_carlo.py
 import numpy as np
-from typing import List, Dict, Tuple, Set, Union
+import pickle
+import os
+from typing import List, Dict, Tuple, Set, Union, Optional
 from qiskit import QuantumCircuit
 from .pauli_term  import PauliTerm
 from .utils       import weight_of_key
@@ -133,14 +135,90 @@ class MonteCarlo:
 
         return (last_coeff_unbiased, current_key, n, weight_exceeded_flags)
 
+    def _save_samples(self, 
+                     sample_file: str, 
+                     sampled_last_paulis: List[PauliTerm], 
+                     weight_exceeded_details: List[List[bool]], 
+                     last_pauli_weights: List[int], 
+                     coeff_sqs: List[float]) -> None:
+        """
+        Save Monte Carlo samples to a pickle file.
+        
+        Parameters
+        ----------
+        sample_file : str
+            Path to the pickle file
+        sampled_last_paulis : List[PauliTerm]
+            List of final PauliTerms
+        weight_exceeded_details : List[List[bool]]
+            Weight exceeded flags for each sample
+        last_pauli_weights : List[int]
+            Final weights for each sample
+        coeff_sqs : List[float]
+            Coefficient squares for each sample
+        """
+        sample_data = {
+            'sampled_last_paulis': sampled_last_paulis,
+            'weight_exceeded_details': weight_exceeded_details,
+            'last_pauli_weights': last_pauli_weights,
+            'coeff_sqs': coeff_sqs,
+            'qc_info': {
+                'num_qubits': self.n,
+                'circuit_depth': len(self.qc.data)
+            }
+        }
+        
+        # Create directory if needed
+        dir_path = os.path.dirname(sample_file)
+        if dir_path:  # Only create directory if there's a directory path
+            os.makedirs(dir_path, exist_ok=True)
+        
+        with open(sample_file, 'wb') as f:
+            pickle.dump(sample_data, f)
+
+    def _load_samples(self, sample_file: str) -> Tuple[List[PauliTerm], List[List[bool]], List[int], List[float]]:
+        """
+        Load Monte Carlo samples from a pickle file.
+        
+        Parameters
+        ----------
+        sample_file : str
+            Path to the pickle file
+            
+        Returns
+        -------
+        Tuple[List[PauliTerm], List[List[bool]], List[int], List[float]]
+            Loaded sample data in the same format as monte_carlo_samples returns
+        """
+        if not os.path.exists(sample_file):
+            return [], [], [], []
+            
+        with open(sample_file, 'rb') as f:
+            sample_data = pickle.load(f)
+            
+        # Validate circuit compatibility
+        if sample_data['qc_info']['num_qubits'] != self.n:
+            raise ValueError(f"Loaded samples have {sample_data['qc_info']['num_qubits']} qubits, "
+                           f"but current circuit has {self.n} qubits")
+            
+        return (sample_data['sampled_last_paulis'],
+                sample_data['weight_exceeded_details'],
+                sample_data['last_pauli_weights'],
+                sample_data['coeff_sqs'])
+
     def monte_carlo_samples(self,
                           init_term: PauliTerm,
                           M: int,
-                          tol: float = 0
+                          tol: float = 0,
+                          sample_file: Optional[str] = None,
+                          load_existing: bool = False
                          ) -> Tuple[List[PauliTerm], List[List[bool]], List[int], List[float]]:
         """
         Generate M Monte Carlo backtracking paths, only keeping the final PauliTerms.
         Always uses parallel processing for optimal performance.
+        
+        Supports sample persistence: can save/load samples to/from pickle files for
+        incremental sampling across multiple runs.
         
         The results are stored internally and also returned for compatibility.
         
@@ -149,9 +227,13 @@ class MonteCarlo:
         init_term : PauliTerm
             Initial Pauli term
         M : int
-            Number of Monte Carlo paths to generate
+            Total number of Monte Carlo paths desired (including loaded samples)
         tol : float
             Tolerance for filtering small coefficients
+        sample_file : Optional[str]
+            Path to pickle file for saving/loading samples. If None, no persistence.
+        load_existing : bool
+            Whether to load existing samples from sample_file before generating new ones
             
         Returns
         -------
@@ -167,36 +249,79 @@ class MonteCarlo:
         if init_term.n != self.n:
             raise ValueError("Initial term qubit count mismatch")
         
-        ops = [] # Prepare reverse gate operation sequence
-        for instr in reversed(self.qc.data):
-            gate_name = instr.operation.name
-            qidx = tuple(self.q2i[q] for q in instr.qubits) 
-            extra = QuantumGate.extract_params(gate_name, instr)
-            ops.append((gate_name, qidx, extra))
-
-        # Always use parallel processing
+        # Initialize result containers
         sampled_last_paulis = []
         weight_exceeded_details = []
+        last_pauli_weights = []
+        coeff_sqs = []
         
-        with ProcessPoolExecutor(max_workers=_MAX_WORKERS) as executor:
-            # Prepare arguments for all paths
-            args_list = [(ops, init_term.key, init_term.coeff, self.n, tol) for _ in range(M)]
+        # Load existing samples if requested
+        if load_existing and sample_file and os.path.exists(sample_file):
+            print(f"Loading existing samples from {sample_file}...")
+            (loaded_paulis, loaded_weight_details, 
+             loaded_weights, loaded_coeff_sqs) = self._load_samples(sample_file)
             
-            # Submit all tasks
-            futures = [executor.submit(MonteCarlo._sample_one_path, args) for args in args_list]
+            sampled_last_paulis.extend(loaded_paulis)
+            weight_exceeded_details.extend(loaded_weight_details)
+            last_pauli_weights.extend(loaded_weights)
+            coeff_sqs.extend(loaded_coeff_sqs)
             
-            # Collect results with progress bar
-            for future in tqdm(as_completed(futures), total=M, desc="MC sampling"):
-                coeff, key, n, weight_exceeded_flags = future.result()
-                
-                # Create final PauliTerm and store results
-                last_pauli = PauliTerm(coeff, key, n)
-                sampled_last_paulis.append(last_pauli)
-                weight_exceeded_details.append(weight_exceeded_flags)
+            print(f"Loaded {len(loaded_paulis)} existing samples")
+        
+        # Calculate how many new samples we need
+        existing_count = len(sampled_last_paulis)
+        new_samples_needed = max(0, M - existing_count)
+        
+        if new_samples_needed == 0:
+            print(f"Already have {existing_count} samples, no new sampling needed")
+        else:
+            print(f"Generating {new_samples_needed} new samples (total target: {M})")
+            
+            # Prepare reverse gate operation sequence
+            ops = []
+            for instr in reversed(self.qc.data):
+                gate_name = instr.operation.name
+                qidx = tuple(self.q2i[q] for q in instr.qubits) 
+                extra = QuantumGate.extract_params(gate_name, instr)
+                ops.append((gate_name, qidx, extra))
 
-        # Calculate additional required values
-        last_pauli_weights = [pauli.weight() for pauli in sampled_last_paulis]
-        coeff_sqs = [np.abs(pauli.coeff)**2 for pauli in sampled_last_paulis]
+            # Generate new samples using parallel processing
+            new_sampled_paulis = []
+            new_weight_details = []
+            
+            with ProcessPoolExecutor(max_workers=_MAX_WORKERS) as executor:
+                # Prepare arguments for new paths
+                args_list = [(ops, init_term.key, init_term.coeff, self.n, tol) 
+                           for _ in range(new_samples_needed)]
+                
+                # Submit all tasks
+                futures = [executor.submit(MonteCarlo._sample_one_path, args) for args in args_list]
+                
+                # Collect results with progress bar
+                for future in tqdm(as_completed(futures), total=new_samples_needed, desc="MC sampling"):
+                    coeff, key, n, weight_exceeded_flags = future.result()
+                    
+                    # Create final PauliTerm and store results
+                    last_pauli = PauliTerm(coeff, key, n)
+                    new_sampled_paulis.append(last_pauli)
+                    new_weight_details.append(weight_exceeded_flags)
+
+            # Add new samples to existing ones
+            sampled_last_paulis.extend(new_sampled_paulis)
+            weight_exceeded_details.extend(new_weight_details)
+            
+            # Calculate additional required values for new samples
+            new_pauli_weights = [pauli.weight() for pauli in new_sampled_paulis]
+            new_coeff_sqs = [np.abs(pauli.coeff)**2 for pauli in new_sampled_paulis]
+            
+            last_pauli_weights.extend(new_pauli_weights)
+            coeff_sqs.extend(new_coeff_sqs)
+
+        # Save samples if requested
+        if sample_file:
+            print(f"Saving {len(sampled_last_paulis)} samples to {sample_file}...")
+            self._save_samples(sample_file, sampled_last_paulis, weight_exceeded_details, 
+                             last_pauli_weights, coeff_sqs)
 
         # Store results internally
         self._sampled_last_paulis = sampled_last_paulis
