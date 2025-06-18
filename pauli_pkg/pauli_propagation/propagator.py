@@ -6,7 +6,7 @@ from typing import List, Dict, Tuple, Set, Union
 from qiskit import QuantumCircuit
 from .pauli_term  import PauliTerm
 from .utils       import weight_of_key
-from .gates       import QuantumGate, TupleGate
+from .gates       import QuantumGate
 from tqdm.notebook import tqdm
 from concurrent.futures import ProcessPoolExecutor, as_completed
 
@@ -17,7 +17,6 @@ _MAX_WORKERS = 10 # or os.cpu_count()
 def _apply_gate_kernel_batch(args):
     """
     Helper function for ProcessPoolExecutor to apply gates to a batch of terms.
-    Uses tuple-based processing for maximum performance - no PauliTerm objects created.
     
     Parameters
     ----------
@@ -35,19 +34,23 @@ def _apply_gate_kernel_batch(args):
     """
     terms_data, gate_name, qidx, extra_args = args
     
-    # Get the ultra-fast tuple-based gate function
-    gate_func = TupleGate.get(gate_name)
+    # Get the gate function  
+    gate_func = QuantumGate.get(gate_name)
     
     results = []
     for term_tuple in terms_data:
-        # Apply gate directly on tuple - NO PauliTerm objects created
-        if extra_args:
-            output_tuples = gate_func(term_tuple, *qidx, *extra_args)
-        else:
-            output_tuples = gate_func(term_tuple, *qidx)
+        # Convert tuple to PauliTerm, apply gate, then convert back to tuples
+        coeff, key, n = term_tuple
+        pauli_term = PauliTerm(coeff, key, n)
         
-        # All results are already tuples - just extend
-        results.extend(output_tuples)
+        if extra_args:
+            output_terms = gate_func(pauli_term, *qidx, *extra_args)
+        else:
+            output_terms = gate_func(pauli_term, *qidx)
+        
+        # Convert back to tuples
+        for term in output_terms:
+            results.append((term.coeff, term.key, term.n))
     
     return results
 
@@ -172,9 +175,7 @@ class PauliPropagator:
         """
         Propagate a Pauli observable through the circuit.
         
-        This method performs exact propagation of a Pauli observable through the circuit,
-        using tuple-based processing internally for maximum performance, only creating
-        PauliTerm objects at the very end for the return value.
+        This method performs exact propagation of a Pauli observable through the circuit.
         
         Parameters
         ----------
@@ -195,7 +196,7 @@ class PauliPropagator:
         if observable.n != self.n:
             raise ValueError("Observable qubit count mismatch")
 
-        # Work with tuple representation internally for maximum performance
+        # Work with tuple representation internally
         current_terms_data = [(observable.coeff, observable.key, observable.n)]
         
         # Store history as tuples - only convert to PauliTerm at the very end
@@ -251,7 +252,7 @@ class PauliPropagator:
                     if abs(coeff.real) > tol or abs(coeff.imag) > tol:
                         current_terms_data.append((coeff, key, self.n))
 
-                # Store as tuples in history - NO PauliTerm objects created during propagation
+                # Store as tuples in history
                 history_tuples.append(current_terms_data.copy())
                 
                 # Early termination if no terms remain
@@ -300,7 +301,7 @@ class PauliPropagator:
         if observable.n != self.n:
             raise ValueError("Observable qubit count mismatch")
 
-        # Work purely with tuples - no PauliTerm objects created at all
+        # Work with tuples internally for efficiency
         current_terms_data = [(observable.coeff, observable.key, observable.n)]
 
         # Prepare reverse circuit operations
@@ -371,7 +372,7 @@ class PauliPropagator:
         pauli_sum : List[PauliTerm]
             List of Pauli terms to evaluate
         product_label : str
-            Product state label (e.g. '0+1-')
+            Product state label (e.g. '0+1--')
             
         Returns
         -------

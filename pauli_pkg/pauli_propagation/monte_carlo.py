@@ -8,7 +8,7 @@ from typing import List, Dict, Tuple, Set, Union, Optional
 from qiskit import QuantumCircuit
 from .pauli_term  import PauliTerm
 from .utils       import weight_of_key
-from .gates       import QuantumGate, TupleGate
+from .gates       import QuantumGate
 from tqdm.notebook import tqdm
 from concurrent.futures import ProcessPoolExecutor, as_completed
 
@@ -67,7 +67,6 @@ class MonteCarlo:
         """
         Helper function for ProcessPoolExecutor to sample one Monte Carlo path.
         This staticmethod can be pickled for multiprocessing.
-        Uses tuple-based gates for maximum performance.
 
         Parameters
         ----------
@@ -99,17 +98,17 @@ class MonteCarlo:
             if init_weight > threshold:
                 weight_exceeded_flags[i] = True
 
-        # Propagate backwards through the circuit using tuple-based gates
+        # Propagate backwards through the circuit using standard gates
         for gate_name, qidx, extra in ops:
-            gate_func = TupleGate.get(gate_name)
-            current_tuple = (1.0, current_key, n)
+            gate_func = QuantumGate.get(gate_name)
+            current_pauli = PauliTerm(1.0, current_key, n)
 
             if extra:
-                out_tuples = gate_func(current_tuple, *qidx, *extra)
+                out_terms = gate_func(current_pauli, *qidx, *extra)
             else:
-                out_tuples = gate_func(current_tuple, *qidx)
+                out_terms = gate_func(current_pauli, *qidx)
 
-            branches = [(key, coeff) for coeff, key, _ in out_tuples]
+            branches = [(term.key, term.coeff) for term in out_terms]
             if not branches:
                 break
 
