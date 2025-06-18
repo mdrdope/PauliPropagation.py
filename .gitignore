@@ -23,6 +23,5 @@
 
 **/junk.ipynb 
 # Ignore specific junk notebook
-**/simple_demo.ipynb
 **/junk.ipynb 
 **/official_tutorial.ipynb
