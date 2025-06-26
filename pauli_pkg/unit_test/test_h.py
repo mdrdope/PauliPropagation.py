@@ -20,7 +20,7 @@ from pauli_propagation.propagator import PauliPropagator
 H_GATE = np.array([[1, 1], [1, -1]], dtype=complex) / np.sqrt(2)
 
 @pytest.mark.parametrize("label", ["I", "X", "Y", "Z"])
-def test_h_single(label):
+def test_h_rule(label):
     """
     Direct test of single-qubit H gate conjugation:
     H^dagger P H == sum of output terms
@@ -64,22 +64,6 @@ def test_h_random_embedded(trial):
         ref = np.kron(m, ref)
 
     assert np.allclose(matsum, ref), f"Embedded H mismatch on qubit {q}, label {label}"
-
-# def generate_random_pauli_label(n: int) -> str:
-#     """Generate a random Pauli label of length n."""
-#     return "".join(np.random.choice(["I", "X", "Y", "Z"], n))
-
-# def pauli_from_label(label: str, n: int) -> PauliTerm:
-#     """Convert Pauli label to PauliTerm."""
-#     key = 0
-#     for i, p in enumerate(reversed(label)):
-#         if p == 'X':
-#             key |= 1 << i
-#         elif p == 'Y':
-#             key |= (1 << i) | (1 << (n + i))
-#         elif p == 'Z':
-#             key |= 1 << (n + i)
-#     return PauliTerm(1.0, key, n)
 
 @pytest.mark.parametrize("trial", range(10))
 def test_h_random_circuits(trial):

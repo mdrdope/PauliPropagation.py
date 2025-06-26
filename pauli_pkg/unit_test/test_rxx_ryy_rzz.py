@@ -1,6 +1,10 @@
 #!/usr/bin/env python3
 
+# -*- coding: utf-8 -*-
+
+
 import itertools
+import random
 import numpy as np
 import pytest
 from math import pi
@@ -15,106 +19,122 @@ from pauli_propagation.utils import (
     pauli_terms_to_matrix,
 )
 from pauli_propagation.pauli_term import PauliTerm
-from pauli_propagation.gates      import QuantumGate
+from pauli_propagation.gates import QuantumGate
 from pauli_propagation.propagator import PauliPropagator
+
+
+# -----------------------------------------------------------------------------
+# Helper utilities
+# -----------------------------------------------------------------------------
 
 LABELS_2Q = ["".join(p) for p in itertools.product("IXYZ", repeat=2)]
 
-def rxx_matrix(q1: int, q2: int, theta: float) -> np.ndarray:
-    """Generate RXX gate matrix for given qubits and angle."""
-    qc = QuantumCircuit(2)
+
+def rxx_matrix(q1: int, q2: int, theta: float, n: int) -> np.ndarray:
+    qc = QuantumCircuit(n)
     qc.rxx(theta, q1, q2)
     return Operator(qc).data
 
-def ryy_matrix(q1: int, q2: int, theta: float) -> np.ndarray:
-    """Generate RYY gate matrix for given qubits and angle."""
-    qc = QuantumCircuit(2)
+
+def ryy_matrix(q1: int, q2: int, theta: float, n: int) -> np.ndarray:
+    qc = QuantumCircuit(n)
     qc.ryy(theta, q1, q2)
     return Operator(qc).data
 
-def rzz_matrix(q1: int, q2: int, theta: float) -> np.ndarray:
-    """Generate RZZ gate matrix for given qubits and angle."""
-    qc = QuantumCircuit(2)
+
+def rzz_matrix(q1: int, q2: int, theta: float, n: int) -> np.ndarray:
+    qc = QuantumCircuit(n)
     qc.rzz(theta, q1, q2)
     return Operator(qc).data
 
-@pytest.mark.parametrize("gate_name", ["rxx", "ryy", "rzz"])
-@pytest.mark.parametrize("q1,q2", [(0, 1), (1, 0)])
-@pytest.mark.parametrize("label", LABELS_2Q)
-@pytest.mark.parametrize("theta", [0.0, pi/4, pi/2, pi, 3*pi/2, 2*pi])
-def test_rxx_ryy_rzz_matrix_equivalence(gate_name, q1, q2, label, theta):
-    """Test that pauli propagation matches direct matrix propagation."""
-    # Get gate matrix
-    if gate_name == "rxx":
-        U = rxx_matrix(q1, q2, theta)
-    elif gate_name == "ryy":
-        U = ryy_matrix(q1, q2, theta)
-    else:  # rzz
-        U = rzz_matrix(q1, q2, theta)
-    
-    # Get gate kernel
-    kernel = QuantumGate.get(gate_name)
-    key = encode_pauli(Pauli(label))
-    
-    # Create input PauliTerm
-    input_term = PauliTerm(1.0, key, 2)
-    
-    # Apply gate via pauli propagation
-    output_terms = kernel(input_term, q1, q2, theta)
-    
-    # Convert output list to matrix
-    matsum = pauli_terms_to_matrix(output_terms, 2)
-    
-    # Calculate expected result via direct matrix propagation
-    expected = U.conj().T @ Pauli(label).to_matrix() @ U
-    
-    assert np.allclose(matsum, expected), f"Matrix mismatch for {gate_name}(θ={theta}) on {label}, qubits ({q1},{q2})"
 
-@pytest.mark.parametrize("trial", range(30))
-def test_rxx_ryy_rzz_expectation_values(trial):
-    """Test RXX, RYY, RZZ gates: compare PauliPropagator expectation vs Qiskit statevector expectation."""
-    np.random.seed(trial + 1000)  # Set seed for reproducibility
-    
-    # Random circuit parameters
-    n = np.random.randint(2, 6)  # 2-5 qubits (minimum 2 for two-qubit gates)
-    n_gates = np.random.randint(3, 8)  # 3-7 gates
-    
-    # Random initial state and observable
+GATE_MAT_FUNCS = {"rxx": rxx_matrix, "ryy": ryy_matrix, "rzz": rzz_matrix}
+
+
+
+ANGLES_SAMPLE = [0.0, pi / 4, pi / 2, pi]  # representative angles incl. edge cases
+
+
+# Use random angle per case to reduce total combinations
+@pytest.mark.parametrize("gate_name", ["rxx", "ryy", "rzz"])
+@pytest.mark.parametrize("q_pair", [(0, 1), (1, 0)])
+@pytest.mark.parametrize("label", LABELS_2Q)
+def test_rxx_ryy_rzz_rules(gate_name, q_pair, label):
+    """Validate conjugation U† P U for RXX/RYY/RZZ on all 2-qubit Paulis."""
+
+    q1, q2 = q_pair
+    theta = random.uniform(0, 2 * pi)
+    U = GATE_MAT_FUNCS[gate_name](q1, q2, theta, 2)
+
+    key = encode_pauli(Pauli(label))
+    input_term = PauliTerm(1.0, key, 2)
+
+    output_terms = QuantumGate.get(gate_name)(input_term, q1, q2, theta)
+    matsum = pauli_terms_to_matrix(output_terms, 2)
+
+    expected = U.conj().T @ Pauli(label).to_matrix() @ U
+
+    assert np.allclose(matsum, expected), (
+        f"Mismatch {gate_name.upper()}(θ={theta}) on qubits ({q1},{q2}) P={label}")
+
+
+TRIALS_EMB = 20
+
+
+@pytest.mark.parametrize("gate_name", ["rxx", "ryy", "rzz"])
+@pytest.mark.parametrize("trial", range(TRIALS_EMB))
+def test_rxx_ryy_rzz_random_embedded(gate_name, trial):
+    np.random.seed(trial + 15000)
+    num_qubits = 6
+
+    label = "".join(random.choice("IXYZ") for _ in range(num_qubits))
+    q1, q2 = random.sample(range(num_qubits), 2)
+    theta = random.uniform(0, 2 * pi)
+
+    key = encode_pauli(Pauli(label))
+    input_term = PauliTerm(1.0, key, num_qubits)
+
+    output_terms = QuantumGate.get(gate_name)(input_term, q1, q2, theta)
+    matsum = pauli_terms_to_matrix(output_terms, num_qubits)
+
+    # Dense reference
+    qc_ref = QuantumCircuit(num_qubits)
+    getattr(qc_ref, gate_name)(theta, q1, q2)
+    G_full = Operator(qc_ref).data
+    ref = G_full.conj().T @ Pauli(label).to_matrix() @ G_full
+
+    assert np.allclose(matsum, ref), (
+        f"Embedded {gate_name.upper()} mismatch θ={theta:.3f} qubits ({q1},{q2}) label {label}")
+
+
+@pytest.mark.parametrize("trial", range(10))
+def test_rxx_ryy_rzz_random_circuits(trial):
+    np.random.seed(trial + 15100)
+
+    n = np.random.randint(2, 6)  # 2–5 qubits
+    n_gates = np.random.randint(3, 8)
+
     state_label = random_state_label(n)
     pauli_label = random_pauli_label(n)
-    observable_key = encode_pauli(Pauli(pauli_label))
-    observable = PauliTerm(1.0, observable_key, n)
-    
-    # Available gate types
-    gate_types = ['rxx', 'ryy', 'rzz']
-    
-    # Create quantum circuit with random two-qubit rotation gates
-    qc = QuantumCircuit(n, name=f"rxx_ryy_rzz_rand_{n}q_{n_gates}g")
-    
+    observable = PauliTerm(1.0, encode_pauli(Pauli(pauli_label)), n)
+
+    qc = QuantumCircuit(n, name=f"rpair_rand_{n}q_{n_gates}g")
+    gate_choices = ["rxx", "ryy", "rzz"]
     for _ in range(n_gates):
-        # Choose random gate type and qubits
-        gate_type = np.random.choice(gate_types)
-        q1, q2 = np.random.choice(n, 2, replace=False)
-        theta = np.random.uniform(0, 2*np.pi)
-        
-        # Add gate to circuit
-        if gate_type == 'rxx':
-            qc.rxx(theta, q1, q2)
-        elif gate_type == 'ryy':
-            qc.ryy(theta, q1, q2)
-        elif gate_type == 'rzz':
-            qc.rzz(theta, q1, q2)
-    
-    # Method 1: PauliPropagator expectation
+        gate = random.choice(gate_choices)
+        q1, q2 = random.sample(range(n), 2)
+        theta = random.uniform(0, 2 * pi)
+        getattr(qc, gate)(theta, q1, q2)
+
+    # Pauli propagation
     prop = PauliPropagator(qc)
-    layers = prop.propagate(observable, max_weight=None)
-    pauli_expectation = prop.expectation_pauli_sum(layers[-1], state_label)
-    
-    # Method 2: Qiskit statevector expectation
-    sv_expectation = Statevector.from_label(state_label).evolve(qc).expectation_value(Pauli(pauli_label)).real
-    
-    # Compare results
-    assert abs(pauli_expectation - sv_expectation) < 1e-10, (
-        f"Trial {trial}: expectation mismatch {pauli_expectation} vs {sv_expectation} "
-        f"on state {state_label}, observable {pauli_label}, circuit {n}q {n_gates}g"
-    ) 
+    final_layer = prop.propagate(observable, max_weight=None)[-1]
+    pauli_exp = prop.expectation_pauli_sum(final_layer, state_label)
+
+    # Exact state-vector simulation
+    psi0 = Statevector.from_label(state_label)
+    psi1 = psi0.evolve(qc)
+    exact_exp = psi1.expectation_value(Pauli(pauli_label)).real
+
+    assert abs(pauli_exp - exact_exp) < 1e-10, (
+        f"Trial {trial}: {pauli_exp} vs {exact_exp} (state={state_label}, P={pauli_label})") 

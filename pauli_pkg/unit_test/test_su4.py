@@ -71,7 +71,7 @@ def test_su4_random_embedded(trial):
     output_terms = QuantumGate.get("su4")(input_term, q1, q2, U)
     matsum = pauli_terms_to_matrix(output_terms, num_qubits)
 
-    # Reference via Qiskit Operator (no manual kron loop)
+    # Reference via Qiskit Operator 
     qc_ref = QuantumCircuit(num_qubits)
     gate_unitary = UnitaryGate(U, label="su4")
     gate_unitary._name = "su4"

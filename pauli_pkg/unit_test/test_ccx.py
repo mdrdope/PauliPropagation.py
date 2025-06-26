@@ -48,22 +48,29 @@ def test_ccx_rule(ctrl1, ctrl2, tgt, label):
     expected = U.conj().T @ Pauli(label).to_matrix() @ U
     assert np.allclose(matsum, expected), f"Mismatch for ctrl1={ctrl1}, ctrl2={ctrl2}, tgt={tgt}, P={label}"
 
-# Test specific cases to verify the decomposition works correctly
-@pytest.mark.parametrize("label", ["XII", "IXI", "IIX", "XYZ", "YYY"])
-def test_ccx_specific_cases(label):
-    """Test CCX on specific Pauli cases to verify correctness."""
-    ctrl1, ctrl2, tgt = 0, 1, 2
-    U      = ccx_matrix(ctrl1, ctrl2, tgt)
-    kernel = QuantumGate.get("ccx")
-    key    = encode_pauli(Pauli(label))
-    
-    input_term = PauliTerm(1.0, key, 3)
-    output_terms = kernel(input_term, ctrl1, ctrl2, tgt)
-    
-    matsum = pauli_terms_to_matrix(output_terms, 3)
+TRIALS_EMB = 20
+
+@pytest.mark.parametrize("trial", range(TRIALS_EMB))
+def test_ccx_random_embedded(trial):
+    np.random.seed(trial + 19000)
+    num_qubits = 6
+
+    label = "".join(np.random.choice(list("IXYZ"), num_qubits))
+    ctrl1, ctrl2, tgt = np.random.choice(num_qubits, 3, replace=False)
+
+    key = encode_pauli(Pauli(label))
+    input_term = PauliTerm(1.0, key, num_qubits)
+
+    output_terms = QuantumGate.get("ccx")(input_term, ctrl1, ctrl2, tgt)
+    matsum = pauli_terms_to_matrix(output_terms, num_qubits)
+
+    qc_ref = QuantumCircuit(num_qubits)
+    qc_ref.ccx(ctrl1, ctrl2, tgt)
+    U = Operator(qc_ref).data
     expected = U.conj().T @ Pauli(label).to_matrix() @ U
-    
-    assert np.allclose(matsum, expected), f"Specific case failed for P={label}"
+
+    assert np.allclose(matsum, expected), (
+        f"Embedded CCX mismatch qubits ({ctrl1},{ctrl2}->{tgt}) label {label}") 
 
 @pytest.mark.parametrize("trial", range(30))
 def test_ccx_random_circuits(trial):

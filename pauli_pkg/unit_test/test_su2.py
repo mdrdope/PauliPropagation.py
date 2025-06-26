@@ -21,12 +21,8 @@ from pauli_propagation.gates import QuantumGate
 from pauli_propagation.propagator import PauliPropagator
 
 
-
-
 # All single-qubit Pauli labels
 LABELS_1Q = ["I", "X", "Y", "Z"]
-
-
 
 TRIALS_RULE = 10  # number of random SU(2) matrices to test
 
@@ -54,12 +50,8 @@ def test_su2_rule(trial: int, label: str):
         f"SU2 single-qubit conjugation failed (trial={trial}, P={label})")
 
 
-# -----------------------------------------------------------------------------
-# 2. Random embedded SU2 gate inside larger Pauli operator
-# -----------------------------------------------------------------------------
 
 TRIALS_EMB = 20
-
 
 @pytest.mark.parametrize("trial", range(TRIALS_EMB))
 def test_su2_random_embedded(trial: int):
@@ -93,10 +85,6 @@ def test_su2_random_embedded(trial: int):
     assert np.allclose(matsum, ref), (
         f"Embedded SU2 mismatch (q={target_q}, label={label})")
 
-
-# -----------------------------------------------------------------------------
-# 3. Random circuits containing many SU2 gates
-# -----------------------------------------------------------------------------
 
 @pytest.mark.parametrize("trial", range(10))
 def test_su2_random_circuits(trial: int):
