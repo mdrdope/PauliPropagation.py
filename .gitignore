@@ -21,7 +21,12 @@
 # Ignore pytest cache
 **/.pytest_cache/
 
+# Ignore .pkl files anywhere
+**/*.pkl
+
 **/junk.ipynb 
 # Ignore specific junk notebook
 **/junk.ipynb 
 **/official_tutorial.ipynb
+
+PauliPropagation.jl-main

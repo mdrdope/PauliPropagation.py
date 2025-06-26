@@ -4,9 +4,15 @@ import random
 import numpy as np
 import pytest
 from math import pi
-from qiskit.quantum_info import Pauli
+from qiskit.quantum_info import Pauli,Statevector
 
-from pauli_propagation.utils import encode_pauli, decode_pauli, random_pauli_label, random_state_label
+from pauli_propagation.utils import (
+    encode_pauli,
+    decode_pauli,
+    random_pauli_label,
+    random_state_label,
+    pauli_terms_to_matrix,
+)
 from pauli_propagation.pauli_term import PauliTerm
 from pauli_propagation.gates import QuantumGate
 
@@ -23,19 +29,6 @@ def rz_matrix(theta):
     return np.array([[np.exp(-1j*theta/2), 0], [0, np.exp(1j*theta/2)]], dtype=complex)
 
 GATE_MATRICES = {"rx": rx_matrix, "ry": ry_matrix, "rz": rz_matrix}
-
-def pauli_terms_to_matrix(terms, n):
-    """
-    Reconstruct sum(alpha_j * P_j) from a list of PauliTerm objects.
-    """
-    if isinstance(terms, PauliTerm):
-        terms = [terms]
-    
-    total_matrix = np.zeros((2**n, 2**n), dtype=complex)
-    for term in terms:
-        pauli = decode_pauli(term.key, term.n)
-        total_matrix += term.coeff * pauli.to_matrix()
-    return total_matrix
 
 @pytest.mark.parametrize("gate_name", ["rx", "ry", "rz"])
 @pytest.mark.parametrize("label", ["I", "X", "Y", "Z"])
@@ -94,9 +87,13 @@ import pytest
 from qiskit import QuantumCircuit
 from qiskit.quantum_info import Pauli, Operator
 
-from pauli_propagation.utils      import encode_pauli, decode_pauli, random_pauli_label
+from pauli_propagation.utils import (
+    encode_pauli,
+    decode_pauli,
+    random_pauli_label,
+)
 from pauli_propagation.pauli_term import PauliTerm
-from pauli_propagation.gates      import QuantumGate
+from pauli_propagation.gates import QuantumGate
 from pauli_propagation.propagator import PauliPropagator
 
 # All single-qubit Pauli labels
@@ -104,10 +101,6 @@ LABELS_1Q = ["I", "X", "Y", "Z"]
 
 # Test angles - 8 evenly spaced angles including edge cases
 ANGLES = [0, np.pi/6, np.pi/4, np.pi/3, np.pi/2, 2*np.pi/3, 3*np.pi/4, np.pi]
-
-def pauli_matrix(label: str) -> np.ndarray:
-    """Convert Pauli label to matrix representation."""
-    return Pauli(label).to_matrix()
 
 def gate_matrix(gate_name: str, q: int, n: int, theta: float = None) -> np.ndarray:
     """Generate gate matrix for given gate and qubit position in n-qubit system."""
@@ -121,14 +114,6 @@ def gate_matrix(gate_name: str, q: int, n: int, theta: float = None) -> np.ndarr
     else:
         raise ValueError(f"Unknown gate: {gate_name}")
     return Operator(qc).data
-
-def pauli_terms_to_matrix(terms: list, n: int) -> np.ndarray:
-    """Convert list of PauliTerm objects to their matrix sum representation."""
-    total_matrix = np.zeros((2**n, 2**n), dtype=complex)
-    for term in terms:
-        pauli = decode_pauli(term.key, term.n)
-        total_matrix += term.coeff * pauli.to_matrix()
-    return total_matrix
 
 @pytest.mark.parametrize("gate_name", ["rx", "ry", "rz"])
 @pytest.mark.parametrize("q", [0, 1])
@@ -155,7 +140,7 @@ def test_rotation_gates(gate_name, q, label, theta):
     # Convert output list to matrix
     matsum = pauli_terms_to_matrix(output_terms, 2)
     
-    expected = U.conj().T @ pauli_matrix(full_label) @ U
+    expected = U.conj().T @ Pauli(full_label).to_matrix() @ U
     assert np.allclose(matsum, expected), f"Mismatch for {gate_name}({theta}) on q={q}, P={full_label}"
 
 # Test specific cases for each rotation gate
@@ -174,15 +159,9 @@ def test_rotation_specific_cases(gate_name, label):
     output_terms = kernel(input_term, q, theta)
     
     matsum = pauli_terms_to_matrix(output_terms, 2)
-    expected = U.conj().T @ pauli_matrix(full_label) @ U
+    expected = U.conj().T @ Pauli(full_label).to_matrix() @ U
     
     assert np.allclose(matsum, expected), f"{gate_name} specific case failed for P={full_label}"
-
-def apply_gate_via_propagator(qc: QuantumCircuit, pauli_term: PauliTerm) -> list:
-    """Apply quantum circuit via propagator."""
-    prop = PauliPropagator(qc)
-    history = prop.propagate(pauli_term)
-    return history[-1]
 
 @pytest.mark.parametrize("trial", range(10))
 def test_rx_ry_rz_random_circuits(trial):
@@ -225,7 +204,7 @@ def test_rx_ry_rz_random_circuits(trial):
     pauli_expectation = prop.expectation_pauli_sum(layers[-1], state_label)
     
     # Method 2: Qiskit statevector expectation
-    from qiskit.quantum_info import Statevector
+
     initial_state = Statevector.from_label(state_label)
     final_state = initial_state.evolve(qc)
     qiskit_expectation = final_state.expectation_value(Pauli(pauli_label)).real

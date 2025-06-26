@@ -7,6 +7,8 @@ qiskit_aer (必须用conda conda install -c conda-forge qiskit-aer)
 pytest
 tqdm
 ipywidgets
-numba
-cython
-设�?�量子电�??代码的时候�?�把job id存下到json里面，然后再�??
+pylatexenc
+# numba
+# cython
+ipykernel
+设�?�量子电�??代码的时候�?�把job id存下到json里面，然后再�??

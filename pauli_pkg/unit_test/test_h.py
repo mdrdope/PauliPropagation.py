@@ -3,29 +3,21 @@
 import random
 import numpy as np
 import pytest
-from qiskit.quantum_info import Pauli
+from qiskit.quantum_info import Pauli, Statevector
 from qiskit import QuantumCircuit
-
-from pauli_propagation.utils import encode_pauli, decode_pauli, random_pauli_label, random_state_label
+from pauli_propagation.utils import (
+    encode_pauli,
+    decode_pauli,
+    random_pauli_label,
+    random_state_label,
+    pauli_terms_to_matrix,
+)
 from pauli_propagation.pauli_term import PauliTerm
 from pauli_propagation.gates import QuantumGate
 from pauli_propagation.propagator import PauliPropagator
 
 # Hadamard gate matrix
 H_GATE = np.array([[1, 1], [1, -1]], dtype=complex) / np.sqrt(2)
-
-def pauli_terms_to_matrix(terms, n):
-    """
-    Reconstruct sum(alpha_j * P_j) from a list of PauliTerm objects.
-    """
-    if isinstance(terms, PauliTerm):
-        terms = [terms]
-    
-    total_matrix = np.zeros((2**n, 2**n), dtype=complex)
-    for term in terms:
-        pauli = decode_pauli(term.key, term.n)
-        total_matrix += term.coeff * pauli.to_matrix()
-    return total_matrix
 
 @pytest.mark.parametrize("label", ["I", "X", "Y", "Z"])
 def test_h_single(label):
@@ -73,27 +65,21 @@ def test_h_random_embedded(trial):
 
     assert np.allclose(matsum, ref), f"Embedded H mismatch on qubit {q}, label {label}"
 
-def generate_random_pauli_label(n: int) -> str:
-    """Generate a random Pauli label of length n."""
-    return "".join(np.random.choice(["I", "X", "Y", "Z"], n))
+# def generate_random_pauli_label(n: int) -> str:
+#     """Generate a random Pauli label of length n."""
+#     return "".join(np.random.choice(["I", "X", "Y", "Z"], n))
 
-def pauli_from_label(label: str, n: int) -> PauliTerm:
-    """Convert Pauli label to PauliTerm."""
-    key = 0
-    for i, p in enumerate(reversed(label)):
-        if p == 'X':
-            key |= 1 << i
-        elif p == 'Y':
-            key |= (1 << i) | (1 << (n + i))
-        elif p == 'Z':
-            key |= 1 << (n + i)
-    return PauliTerm(1.0, key, n)
-
-def apply_gate_via_propagator(qc: QuantumCircuit, pauli_term: PauliTerm) -> list:
-    """Apply quantum circuit via propagator."""
-    prop = PauliPropagator(qc)
-    history = prop.propagate(pauli_term)
-    return history[-1]
+# def pauli_from_label(label: str, n: int) -> PauliTerm:
+#     """Convert Pauli label to PauliTerm."""
+#     key = 0
+#     for i, p in enumerate(reversed(label)):
+#         if p == 'X':
+#             key |= 1 << i
+#         elif p == 'Y':
+#             key |= (1 << i) | (1 << (n + i))
+#         elif p == 'Z':
+#             key |= 1 << (n + i)
+#     return PauliTerm(1.0, key, n)
 
 @pytest.mark.parametrize("trial", range(10))
 def test_h_random_circuits(trial):
@@ -124,7 +110,6 @@ def test_h_random_circuits(trial):
     pauli_expectation = prop.expectation_pauli_sum(layers[-1], state_label)
     
     # Method 2: Qiskit statevector expectation
-    from qiskit.quantum_info import Statevector
     initial_state = Statevector.from_label(state_label)
     final_state = initial_state.evolve(qc)
     qiskit_expectation = final_state.expectation_value(Pauli(pauli_label)).real

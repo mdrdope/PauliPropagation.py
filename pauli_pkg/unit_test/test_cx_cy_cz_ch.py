@@ -4,18 +4,20 @@ import itertools
 import numpy as np
 import pytest
 from qiskit import QuantumCircuit
-from qiskit.quantum_info import Pauli, Operator
+from qiskit.quantum_info import Pauli, Operator, Statevector
 
-from pauli_propagation.utils      import encode_pauli, decode_pauli, random_pauli_label, random_state_label
+from pauli_propagation.utils import (
+    encode_pauli,
+    decode_pauli,
+    random_pauli_label,
+    random_state_label,
+    pauli_terms_to_matrix,
+)
 from pauli_propagation.pauli_term import PauliTerm
 from pauli_propagation.gates      import QuantumGate
 from pauli_propagation.propagator import PauliPropagator
 
 LABELS_2Q = ["".join(p) for p in itertools.product("IXYZ", repeat=2)]
-
-def pauli_matrix(label: str) -> np.ndarray:
-    """Convert Pauli label to matrix representation."""
-    return Pauli(label).to_matrix()
 
 def cx_matrix(ctrl: int, tgt: int) -> np.ndarray:
     """Generate CX gate matrix for given control and target qubits."""
@@ -41,14 +43,6 @@ def ch_matrix(ctrl: int, tgt: int) -> np.ndarray:
     qc.ch(ctrl, tgt)
     return Operator(qc).data
 
-def pauli_terms_to_matrix(terms: list, n: int) -> np.ndarray:
-    """Convert list of PauliTerm objects to their matrix sum representation."""
-    total_matrix = np.zeros((2**n, 2**n), dtype=complex)
-    for term in terms:
-        pauli = decode_pauli(term.key, term.n)
-        total_matrix += term.coeff * pauli.to_matrix()
-    return total_matrix
-
 @pytest.mark.parametrize("ctrl,tgt", [(0, 1), (1, 0)])
 @pytest.mark.parametrize("label", LABELS_2Q)
 def test_cx_rule(ctrl, tgt, label):
@@ -66,7 +60,7 @@ def test_cx_rule(ctrl, tgt, label):
     # Convert output list to matrix
     matsum = pauli_terms_to_matrix(output_terms, 2)
     
-    expected = U.conj().T @ pauli_matrix(label) @ U
+    expected = U.conj().T @ Pauli(label).to_matrix() @ U
     assert np.allclose(matsum, expected), f"Mismatch for ctrl={ctrl}, tgt={tgt}, P={label}"
 
 @pytest.mark.parametrize("ctrl,tgt", [(0, 1), (1, 0)])
@@ -86,7 +80,7 @@ def test_cz_rule(ctrl, tgt, label):
     # Convert output list to matrix
     matsum = pauli_terms_to_matrix(output_terms, 2)
     
-    expected = U.conj().T @ pauli_matrix(label) @ U
+    expected = U.conj().T @ Pauli(label).to_matrix() @ U
     assert np.allclose(matsum, expected), f"Mismatch for ctrl={ctrl}, tgt={tgt}, P={label}"
 
 @pytest.mark.parametrize("ctrl,tgt", [(0, 1), (1, 0)])
@@ -106,7 +100,7 @@ def test_cy_rule(ctrl, tgt, label):
     # Convert output list to matrix
     matsum = pauli_terms_to_matrix(output_terms, 2)
     
-    expected = U.conj().T @ pauli_matrix(label) @ U
+    expected = U.conj().T @ Pauli(label).to_matrix() @ U
     assert np.allclose(matsum, expected), f"Mismatch for ctrl={ctrl}, tgt={tgt}, P={label}"
 
 @pytest.mark.parametrize("ctrl,tgt", [(0, 1), (1, 0)])
@@ -126,81 +120,9 @@ def test_ch_rule(ctrl, tgt, label):
     # Convert output list to matrix
     matsum = pauli_terms_to_matrix(output_terms, 2)
     
-    expected = U.conj().T @ pauli_matrix(label) @ U
+    expected = U.conj().T @ Pauli(label).to_matrix() @ U
     assert np.allclose(matsum, expected), f"Mismatch for ctrl={ctrl}, tgt={tgt}, P={label}"
 
-# Test specific CZ cases to verify the bit manipulation rules
-@pytest.mark.parametrize("label", ["XI", "IX", "XX", "YY", "ZZ"])
-def test_cz_specific_cases(label):
-    """Test CZ on specific Pauli cases to verify bit manipulation rules."""
-    ctrl, tgt = 0, 1
-    U      = cz_matrix(ctrl, tgt)
-    kernel = QuantumGate.get("cz")
-    key    = encode_pauli(Pauli(label))
-    
-    input_term = PauliTerm(1.0, key, 2)
-    output_terms = kernel(input_term, ctrl, tgt)
-    
-    matsum = pauli_terms_to_matrix(output_terms, 2)
-    expected = U.conj().T @ pauli_matrix(label) @ U
-    
-    assert np.allclose(matsum, expected), f"CZ specific case failed for P={label}"
-
-# Test specific CY cases to verify the bit manipulation rules
-@pytest.mark.parametrize("label", ["XI", "IX", "XX", "YI", "IY", "YY"])
-def test_cy_specific_cases(label):
-    """Test CY on specific Pauli cases to verify bit manipulation rules."""
-    ctrl, tgt = 0, 1
-    U      = cy_matrix(ctrl, tgt)
-    kernel = QuantumGate.get("cy")
-    key    = encode_pauli(Pauli(label))
-    
-    input_term = PauliTerm(1.0, key, 2)
-    output_terms = kernel(input_term, ctrl, tgt)
-    
-    matsum = pauli_terms_to_matrix(output_terms, 2)
-    expected = U.conj().T @ pauli_matrix(label) @ U
-    
-    assert np.allclose(matsum, expected), f"CY specific case failed for P={label}"
-
-# Test specific CH cases to verify the controlled-H behavior
-@pytest.mark.parametrize("label", ["II", "XI", "IX", "XX", "ZI", "IZ", "ZZ"])
-def test_ch_specific_cases(label):
-    """Test CH on specific Pauli cases to verify controlled-H behavior."""
-    ctrl, tgt = 0, 1
-    U      = ch_matrix(ctrl, tgt)
-    kernel = QuantumGate.get("ch")
-    key    = encode_pauli(Pauli(label))
-    
-    input_term = PauliTerm(1.0, key, 2)
-    output_terms = kernel(input_term, ctrl, tgt)
-    
-    matsum = pauli_terms_to_matrix(output_terms, 2)
-    expected = U.conj().T @ pauli_matrix(label) @ U
-    
-    assert np.allclose(matsum, expected), f"CH specific case failed for P={label}"
-
-def generate_random_pauli_label(n: int) -> str:
-    """Generate a random Pauli label of length n."""
-    return "".join(np.random.choice(["I", "X", "Y", "Z"], n))
-
-def pauli_from_label(label: str, n: int) -> PauliTerm:
-    """Convert Pauli label to PauliTerm."""
-    key = 0
-    for i, p in enumerate(reversed(label)):
-        if p == 'X':
-            key |= 1 << i
-        elif p == 'Y':
-            key |= (1 << i) | (1 << (n + i))
-        elif p == 'Z':
-            key |= 1 << (n + i)
-    return PauliTerm(1.0, key, n)
-
-def apply_gate_via_propagator(qc: QuantumCircuit, pauli_term: PauliTerm) -> list:
-    """Apply quantum circuit via propagator."""
-    prop = PauliPropagator(qc)
-    history = prop.propagate(pauli_term)
-    return history[-1]
 
 @pytest.mark.parametrize("trial", range(10))
 def test_cx_cy_cz_ch_random_circuits(trial):
@@ -244,7 +166,6 @@ def test_cx_cy_cz_ch_random_circuits(trial):
     pauli_expectation = prop.expectation_pauli_sum(layers[-1], state_label)
     
     # Method 2: Qiskit statevector expectation
-    from qiskit.quantum_info import Statevector
     initial_state = Statevector.from_label(state_label)
     final_state = initial_state.evolve(qc)
     qiskit_expectation = final_state.expectation_value(Pauli(pauli_label)).real
@@ -254,3 +175,20 @@ def test_cx_cy_cz_ch_random_circuits(trial):
         f"Trial {trial}: expectation mismatch {pauli_expectation} vs {qiskit_expectation} "
         f"on state {state_label}, observable {pauli_label}, circuit {n}q {n_gates}g"
     ) 
+
+
+# def generate_random_pauli_label(n: int) -> str:
+#     """Generate a random Pauli label of length n."""
+#     return "".join(np.random.choice(["I", "X", "Y", "Z"], n))
+
+# def pauli_from_label(label: str, n: int) -> PauliTerm:
+#     """Convert Pauli label to PauliTerm."""
+#     key = 0
+#     for i, p in enumerate(reversed(label)):
+#         if p == 'X':
+#             key |= 1 << i
+#         elif p == 'Y':
+#             key |= (1 << i) | (1 << (n + i))
+#         elif p == 'Z':
+#             key |= 1 << (n + i)
+#     return PauliTerm(1.0, key, n)

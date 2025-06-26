@@ -310,7 +310,7 @@ def t_gate(pauli_term: PauliTerm, q: int) -> List[PauliTerm]:
     # X or Y Pauli: splits into two terms
     key2 = key ^ (1 << (n+q))  # Flip Z bit
     c1 = coeff / np.sqrt(2)
-    c2 = +c1 if z else -c1
+    c2 = +c1 if z else -c1 
     
     return [PauliTerm(c1, key, n), PauliTerm(c2, key2, n)]
 

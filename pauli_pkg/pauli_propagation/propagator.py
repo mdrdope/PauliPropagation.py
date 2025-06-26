@@ -12,7 +12,7 @@ from concurrent.futures import ProcessPoolExecutor, as_completed
 
 # Threshold for parallel processing and maximum number of worker processes
 _PARALLEL_THRESHOLD = 2000
-_MAX_WORKERS = 10 # or os.cpu_count()
+_MAX_WORKERS = 8 # or os.cpu_count()
 
 def _apply_gate_kernel_batch(args):
     """
@@ -92,12 +92,12 @@ class PauliPropagator:
     _STATE_IDX = {'0':0,'1':1,'+':2,'-':3,'r':4,'l':5}
     # Pre-computed expectation values for different states and Pauli operators
     _EXP_TABLE = np.zeros((6,2,2), dtype=float)
-    _EXP_TABLE[_STATE_IDX['0'],:] = [[1,0],[1,0]]  # |0�???? state
-    _EXP_TABLE[_STATE_IDX['1'],:] = [[1,0],[-1,0]] # |1�???? state
-    _EXP_TABLE[_STATE_IDX['+'],:] = [[1,1],[0,0]]  # |+�???? state
-    _EXP_TABLE[_STATE_IDX['-'],:] = [[1,-1],[0,0]] # |-�???? state
-    _EXP_TABLE[_STATE_IDX['r'],:] = [[1,0],[0,1]]  # |r�???? state
-    _EXP_TABLE[_STATE_IDX['l'],:] = [[1,0],[0,-1]] # |l�???? state
+    _EXP_TABLE[_STATE_IDX['0'],:] = [[1,0],[1,0]]  # |0> state
+    _EXP_TABLE[_STATE_IDX['1'],:] = [[1,0],[-1,0]] # |1> state
+    _EXP_TABLE[_STATE_IDX['+'],:] = [[1,1],[0,0]]  # |+> state
+    _EXP_TABLE[_STATE_IDX['-'],:] = [[1,-1],[0,0]] # |-> state
+    _EXP_TABLE[_STATE_IDX['r'],:] = [[1,0],[0,1]]  # |r> state
+    _EXP_TABLE[_STATE_IDX['l'],:] = [[1,0],[0,-1]] # |l> state
 
     @staticmethod
     def _expect_keys(coeffs: np.ndarray, keys: np.ndarray, 
@@ -265,101 +265,11 @@ class PauliPropagator:
 
         # ONLY at the very end: convert all tuple history to PauliTerm objects for user
         # This is the ONLY place where PauliTerm objects are created in the entire propagation
-        history: List[List[PauliTerm]] = [
-            self._tuples_to_pauli_terms(layer_tuples) 
-            for layer_tuples in history_tuples
-        ]
+        history: List[List[PauliTerm]] = [self._tuples_to_pauli_terms(layer_tuples) 
+                                          for layer_tuples in history_tuples]
 
         return history
 
-    def propagate_fast(self,
-                       observable: PauliTerm,
-                       max_weight: int | None = None,
-                       use_parallel: bool = False,
-                       tol: float = 1e-10,
-                      ) -> List[Tuple[complex, int, int]]:
-        """
-        Fast propagation that returns only the final layer as tuples.
-        Use this when you only need the final result and want maximum performance.
-        
-        Parameters
-        ----------
-        observable : PauliTerm
-            Initial Pauli observable to propagate
-        max_weight : int | None
-            Maximum weight of Pauli terms to keep (None for no limit)
-        use_parallel : bool
-            Whether to use parallel processing
-        tol : float
-            Tolerance for discarding small coefficients
-            
-        Returns
-        -------
-        List[Tuple[complex, int, int]]
-            Final Pauli terms as (coefficient, key, n) tuples
-        """
-        if observable.n != self.n:
-            raise ValueError("Observable qubit count mismatch")
-
-        # Work with tuples internally for efficiency
-        current_terms_data = [(observable.coeff, observable.key, observable.n)]
-
-        # Prepare reverse circuit operations
-        ops = []
-        for instr in reversed(self.qc.data):
-            gate_name = instr.operation.name
-            qidx = tuple(self.q2i[q] for q in instr.qubits)
-            extra = QuantumGate.extract_params(gate_name, instr)
-            ops.append((gate_name, qidx, extra))
-
-        # Set up parallel processing if requested
-        executor = ProcessPoolExecutor(max_workers=_MAX_WORKERS) if use_parallel else None
-        try:
-            for gate_name, qidx, extra_args in tqdm(ops, desc=f"Fast propagating, max weight: {max_weight}", total=len(ops)):
-                
-                # Apply gates
-                if not use_parallel or len(current_terms_data) < _PARALLEL_THRESHOLD:
-                    next_terms_data = _apply_gate_kernel_batch((current_terms_data, gate_name, qidx, extra_args))
-                else:
-                    # Parallel processing
-                    chunk_size = max(1, len(current_terms_data) // _MAX_WORKERS)
-                    chunks = [current_terms_data[i:i+chunk_size] 
-                            for i in range(0, len(current_terms_data), chunk_size)]
-                    
-                    future_to_chunk = {executor.submit(_apply_gate_kernel_batch, (chunk, gate_name, qidx, extra_args)): chunk 
-                                       for chunk in chunks}
-                    
-                    next_terms_data = []
-                    for future in as_completed(future_to_chunk):
-                        chunk_results = future.result()
-                        next_terms_data.extend(chunk_results)
-
-                # Merge and filter
-                key_to_coeff: Dict[int, complex] = {}
-                
-                for coeff, key, n in next_terms_data:
-                    if max_weight is not None and weight_of_key(key, self.n) > max_weight:
-                        continue
-                    if abs(coeff.real) <= tol and abs(coeff.imag) <= tol:
-                        continue
-                    
-                    key_to_coeff[key] = key_to_coeff.get(key, 0.0) + coeff
-
-                # Rebuild current terms
-                current_terms_data = []
-                for key, coeff in key_to_coeff.items():
-                    if abs(coeff.real) > tol or abs(coeff.imag) > tol:
-                        current_terms_data.append((coeff, key, self.n))
-
-                # Early termination if no terms remain
-                if not current_terms_data:
-                    break
-
-        finally:
-            if executor:
-                executor.shutdown()
-
-        return current_terms_data
 
     def expectation_pauli_sum(self,
                               pauli_sum: List[PauliTerm],
@@ -405,144 +315,232 @@ class PauliPropagator:
                                      state_idxs, self.n,
                                      self._EXP_TABLE))
 
-    def expectation_tuples(self,
-                          terms_data: List[Tuple[complex, int, int]],
-                          product_label: str) -> float:
-        """
-        Calculate expectation value directly from tuple data.
-        This is the most efficient way to compute expectation values.
+    # def analytical_truncation_mse(self,
+    #                             init_term: PauliTerm,
+    #                             product_label: str = None
+    #                             ) -> Dict[str, Union[Dict[int, float], int]]:
+    #     """
+    #     Compute the exact, instantaneous truncation MSE (Mean Squared Error)
+    #     by dynamic programming over Pauli-propagation paths.
+
+    #     We treat each reverse-propagation path state as a tuple
+    #     (pauli_key, max_weight_so_far), where max_weight_so_far records
+    #     the largest Pauli weight encountered anywhere along the path.
+
+    #     Parameters
+    #     ----------
+    #     init_term : PauliTerm
+    #         The starting Pauli term (with coeff=1 and its encoded key)
+    #     product_label : str, optional
+    #         Product-state label for expectation (e.g. "000...0"); defaults to all-zeros
+
+    #     Returns
+    #     -------
+    #     Dict[str, Union[Dict[int, float], int]]
+    #         Dictionary containing:
+    #         - 'mse_cumulative': {k: MSE^(k) = sum_{max_w > k} p * d^2}
+    #         - 'mse_per_weight': {k: MSE(k) = sum_{max_w == k} p * d^2}
+    #         - 'max_weight': int, maximum weight encountered overall
+    #     """
+    #     if init_term.n != self.n:
+    #         raise ValueError("Initial PauliTerm qubit count mismatch")
+
+    #     # Default to the |0...0> product state
+    #     if product_label is None:
+    #         product_label = "0" * self.n
+
+    #     # Initialize key and its initial weight
+    #     init_key = init_term.key
+    #     init_wt = init_term.weight()
+
+    #     # Build the reverse-propagation gate list
+    #     ops: List[Tuple[str, Tuple[int, ...], Tuple]] = []
+    #     for instr in reversed(self.qc.data):
+    #         name = instr.operation.name
+    #         qidx = tuple(self.q2i[q] for q in instr.qubits)
+    #         extra = QuantumGate.extract_params(name, instr)
+    #         ops.append((name, qidx, extra))
+
+    #     # Probability DP over states (pauli_key, max_weight_so_far)
+    #     # dist[(key, wmax)] = cumulative probability sum |alpha_i|^2 of reaching that state
+    #     dist: Dict[Tuple[int, int], float] = {(init_key, init_wt): 1.0}
+
+    #     for name, qidx, extra in tqdm(ops, desc="DP over states"):
+    #         gate_func = QuantumGate.get(name)
+    #         new_dist: Dict[Tuple[int, int], float] = {}
+
+    #         for (key, wmax), prob in dist.items():
+    #             term = PauliTerm(1.0, key, self.n)
+    #             # Generate all outgoing branches through this gate
+    #             branches = (gate_func(term, *qidx, *extra)
+    #                         if extra else gate_func(term, *qidx))
+
+    #             for branch in branches:
+    #                 p_branch = prob * (abs(branch.coeff) ** 2)
+    #                 new_wmax = max(wmax, branch.weight())
+    #                 new_key = branch.key
+    #                 new_dist[(new_key, new_wmax)] = new_dist.get((new_key, new_wmax), 0.0) + p_branch
+
+    #         dist = new_dist
+
+    #     # Precompute d^2 = (<P, |0^n>)^2 for each final key
+    #     d2_cache: Dict[int, float] = {}
+    #     for (key, _) in dist.keys():
+    #         if key not in d2_cache:
+    #             tmp_term = PauliTerm(1.0, key, self.n)
+    #             d2_cache[key] = self.expectation_pauli_sum([tmp_term], product_label) ** 2
+
+    #     max_k = max(w for (_, w) in dist.keys())
+
+    #     # Cumulative MSE^(k) = sum_{max_w > k} p * d^2
+    #     mse_cumulative: Dict[int, float] = {}
+    #     for k in range(max_k + 1):
+    #         tot = 0.0
+    #         for (key, wmax), p in dist.items():
+    #             if wmax > k:
+    #                 tot += p * d2_cache[key]
+    #         mse_cumulative[k] = tot
+
+    #     # Incremental MSE(k) = sum_{max_w == k} p * d^2
+    #     mse_per_weight: Dict[int, float] = {}
+    #     for k in range(max_k + 1):
+    #         tot = 0.0
+    #         for (key, wmax), p in dist.items():
+    #             if wmax == k:
+    #                 tot += p * d2_cache[key]
+    #         mse_per_weight[k] = tot
+
+    #     return {'mse_cumulative': mse_cumulative,
+    #             'mse_per_weight': mse_per_weight,
+    #             'max_weight': max_k}
+
+    # def propagate_fast(self,
+    #                    observable: PauliTerm,
+    #                    max_weight: int | None = None,
+    #                    use_parallel: bool = False,
+    #                    tol: float = 1e-10,
+    #                   ) -> List[Tuple[complex, int, int]]:
+    #     """
+    #     Fast propagation that returns only the final layer as tuples.
+    #     Use this when you only need the final result and want maximum performance.
         
-        Parameters
-        ----------
-        terms_data : List[Tuple[complex, int, int]]
-            List of (coefficient, key, n) tuples
-        product_label : str
-            Product state label (e.g. '0+1-')
+    #     Parameters
+    #     ----------
+    #     observable : PauliTerm
+    #         Initial Pauli observable to propagate
+    #     max_weight : int | None
+    #         Maximum weight of Pauli terms to keep (None for no limit)
+    #     use_parallel : bool
+    #         Whether to use parallel processing
+    #     tol : float
+    #         Tolerance for discarding small coefficients
             
-        Returns
-        -------
-        float
-            Expectation value
-            
-        Raises
-        ------
-        ValueError
-            If label length doesn't match qubit count
-        """
-        if len(product_label) != self.n:
-            raise ValueError("Label length mismatch")
+    #     Returns
+    #     -------
+    #     List[Tuple[complex, int, int]]
+    #         Final Pauli terms as (coefficient, key, n) tuples
+    #     """
+    #     if observable.n != self.n:
+    #         raise ValueError("Observable qubit count mismatch")
 
-        if not terms_data:
-            return 0.0
+    #     # Work with tuples internally for efficiency
+    #     current_terms_data = [(observable.coeff, observable.key, observable.n)]
 
-        # Pre-compute state indices once
-        state_idxs = np.array([self._STATE_IDX[ch] for ch in product_label[::-1]])
+    #     # Prepare reverse circuit operations
+    #     ops = []
+    #     for instr in reversed(self.qc.data):
+    #         gate_name = instr.operation.name
+    #         qidx = tuple(self.q2i[q] for q in instr.qubits)
+    #         extra = QuantumGate.extract_params(gate_name, instr)
+    #         ops.append((gate_name, qidx, extra))
+
+    #     # Set up parallel processing if requested
+    #     executor = ProcessPoolExecutor(max_workers=_MAX_WORKERS) if use_parallel else None
+    #     try:
+    #         for gate_name, qidx, extra_args in tqdm(ops, desc=f"Fast propagating, max weight: {max_weight}", total=len(ops)):
+                
+    #             # Apply gates
+    #             if not use_parallel or len(current_terms_data) < _PARALLEL_THRESHOLD:
+    #                 next_terms_data = _apply_gate_kernel_batch((current_terms_data, gate_name, qidx, extra_args))
+    #             else:
+    #                 # Parallel processing
+    #                 chunk_size = max(1, len(current_terms_data) // _MAX_WORKERS)
+    #                 chunks = [current_terms_data[i:i+chunk_size] 
+    #                         for i in range(0, len(current_terms_data), chunk_size)]
+                    
+    #                 future_to_chunk = {executor.submit(_apply_gate_kernel_batch, (chunk, gate_name, qidx, extra_args)): chunk 
+    #                                    for chunk in chunks}
+                    
+    #                 next_terms_data = []
+    #                 for future in as_completed(future_to_chunk):
+    #                     chunk_results = future.result()
+    #                     next_terms_data.extend(chunk_results)
+
+    #             # Merge and filter
+    #             key_to_coeff: Dict[int, complex] = {}
+                
+    #             for coeff, key, n in next_terms_data:
+    #                 if max_weight is not None and weight_of_key(key, self.n) > max_weight:
+    #                     continue
+    #                 if abs(coeff.real) <= tol and abs(coeff.imag) <= tol:
+    #                     continue
+                    
+    #                 key_to_coeff[key] = key_to_coeff.get(key, 0.0) + coeff
+
+    #             # Rebuild current terms
+    #             current_terms_data = []
+    #             for key, coeff in key_to_coeff.items():
+    #                 if abs(coeff.real) > tol or abs(coeff.imag) > tol:
+    #                     current_terms_data.append((coeff, key, self.n))
+
+    #             # Early termination if no terms remain
+    #             if not current_terms_data:
+    #                 break
+
+    #     finally:
+    #         if executor:
+    #             executor.shutdown()
+
+    #     return current_terms_data
+
+    # def expectation_tuples(self,
+    #                       terms_data: List[Tuple[complex, int, int]],
+    #                       product_label: str) -> float:
+    #     """
+    #     Calculate expectation value directly from tuple data.
+    #     This is the most efficient way to compute expectation values.
         
-        # Extract coefficients and keys directly from tuples
-        coeffs = np.array([coeff for coeff, _, _ in terms_data], dtype=complex)
-        keys = np.array([key for _, key, _ in terms_data], dtype=object)
+    #     Parameters
+    #     ----------
+    #     terms_data : List[Tuple[complex, int, int]]
+    #         List of (coefficient, key, n) tuples
+    #     product_label : str
+    #         Product state label (e.g. '0+1-')
+            
+    #     Returns
+    #     -------
+    #     float
+    #         Expectation value
+            
+    #     Raises
+    #     ------
+    #     ValueError
+    #         If label length doesn't match qubit count
+    #     """
+    #     if len(product_label) != self.n:
+    #         raise ValueError("Label length mismatch")
 
-        # Calculate expectation value using vectorized computation
-        return float(self._expect_keys(coeffs, keys,
-                                     state_idxs, self.n,
-                                     self._EXP_TABLE))
+    #     if not terms_data:
+    #         return 0.0
 
-    def analytical_truncation_mse(self,
-                                init_term: PauliTerm,
-                                product_label: str = None
-                                ) -> Dict[str, Union[Dict[int, float], int]]:
-        """
-        Compute the exact, ��instantaneous�� truncation MSE (Mean Squared Error)
-        by dynamic programming over Pauli-propagation paths.
+    #     # Pre-compute state indices once
+    #     state_idxs = np.array([self._STATE_IDX[ch] for ch in product_label[::-1]])
+        
+    #     # Extract coefficients and keys directly from tuples
+    #     coeffs = np.array([coeff for coeff, _, _ in terms_data], dtype=complex)
+    #     keys = np.array([key for _, key, _ in terms_data], dtype=object)
 
-        We treat each reverse-propagation path state as a tuple
-        (pauli_key, max_weight_so_far), where max_weight_so_far records
-        the largest Pauli weight encountered anywhere along the path.
-
-        Parameters
-        ----------
-        init_term : PauliTerm
-            The starting Pauli term (with coeff=1 and its encoded key)
-        product_label : str, optional
-            Product-state label for expectation (e.g. "000...0"); defaults to all-zeros
-
-        Returns
-        -------
-        Dict[str, Union[Dict[int, float], int]]
-            {
-            'mse_cumulative': {k: MSE^(k) = sum_{max_w > k} p * d^2},
-            'mse_per_weight': {k: ��MSE(k) = sum_{max_w == k} p * d^2},
-            'max_weight': int   # maximum weight encountered overall
-            }
-        """
-        if init_term.n != self.n:
-            raise ValueError("Initial PauliTerm qubit count mismatch")
-
-        # Default to the |0...0> product state
-        if product_label is None:
-            product_label = "0" * self.n
-
-        # 0) Initialize key and its initial weight
-        init_key = init_term.key
-        init_wt = init_term.weight()
-
-        # 1) Build the reverse-propagation gate list
-        ops: List[Tuple[str, Tuple[int, ...], Tuple]] = []
-        for instr in reversed(self.qc.data):
-            name = instr.operation.name
-            qidx = tuple(self.q2i[q] for q in instr.qubits)
-            extra = QuantumGate.extract_params(name, instr)
-            ops.append((name, qidx, extra))
-
-        # 2) Probability DP over states (pauli_key, max_weight_so_far)
-        # dist[(key, wmax)] = cumulative probability sum |��_��|^2 of reaching that state
-        dist: Dict[Tuple[int, int], float] = {(init_key, init_wt): 1.0}
-
-        for name, qidx, extra in tqdm(ops, desc="DP over states"):
-            gate_func = QuantumGate.get(name)
-            new_dist: Dict[Tuple[int, int], float] = {}
-
-            for (key, wmax), prob in dist.items():
-                term = PauliTerm(1.0, key, self.n)
-                # generate all outgoing branches through this gate
-                branches = (gate_func(term, *qidx, *extra)
-                            if extra else gate_func(term, *qidx))
-
-                for branch in branches:
-                    p_branch = prob * (abs(branch.coeff) ** 2)
-                    new_wmax = max(wmax, branch.weight())
-                    new_key = branch.key
-                    new_dist[(new_key, new_wmax)] = new_dist.get((new_key, new_wmax), 0.0) + p_branch
-
-            dist = new_dist
-
-        # 3) Precompute d^2 = (<P, |0^n>>)^2 for each final key
-        d2_cache: Dict[int, float] = {}
-        for (key, _) in dist.keys():
-            if key not in d2_cache:
-                tmp_term = PauliTerm(1.0, key, self.n)
-                d2_cache[key] = self.expectation_pauli_sum([tmp_term], product_label) ** 2
-
-        max_k = max(w for (_, w) in dist.keys())
-
-        # 3a) Cumulative MSE^(k) = sum_{max_w > k} p * d^2
-        mse_cumulative: Dict[int, float] = {}
-        for k in range(max_k + 1):
-            tot = 0.0
-            for (key, wmax), p in dist.items():
-                if wmax > k:
-                    tot += p * d2_cache[key]
-            mse_cumulative[k] = tot
-
-        # 3b) Incremental ��MSE(k) = sum_{max_w == k} p * d^2
-        mse_per_weight: Dict[int, float] = {}
-        for k in range(max_k + 1):
-            tot = 0.0
-            for (key, wmax), p in dist.items():
-                if wmax == k:
-                    tot += p * d2_cache[key]
-            mse_per_weight[k] = tot
-
-        return {'mse_cumulative': mse_cumulative,
-                'mse_per_weight': mse_per_weight,
-                'max_weight': max_k}
+    #     # Calculate expectation value using vectorized computation
+    #     return float(self._expect_keys(coeffs, keys,
+    #                                  state_idxs, self.n,
+    #                                  self._EXP_TABLE))

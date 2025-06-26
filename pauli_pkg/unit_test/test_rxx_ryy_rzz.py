@@ -7,16 +7,18 @@ from math import pi
 from qiskit import QuantumCircuit
 from qiskit.quantum_info import Pauli, Operator, Statevector
 
-from pauli_propagation.utils      import encode_pauli, decode_pauli, random_pauli_label, random_state_label
+from pauli_propagation.utils import (
+    encode_pauli,
+    decode_pauli,
+    random_pauli_label,
+    random_state_label,
+    pauli_terms_to_matrix,
+)
 from pauli_propagation.pauli_term import PauliTerm
 from pauli_propagation.gates      import QuantumGate
 from pauli_propagation.propagator import PauliPropagator
 
 LABELS_2Q = ["".join(p) for p in itertools.product("IXYZ", repeat=2)]
-
-def pauli_matrix(label: str) -> np.ndarray:
-    """Convert Pauli label to matrix representation."""
-    return Pauli(label).to_matrix()
 
 def rxx_matrix(q1: int, q2: int, theta: float) -> np.ndarray:
     """Generate RXX gate matrix for given qubits and angle."""
@@ -35,14 +37,6 @@ def rzz_matrix(q1: int, q2: int, theta: float) -> np.ndarray:
     qc = QuantumCircuit(2)
     qc.rzz(theta, q1, q2)
     return Operator(qc).data
-
-def pauli_terms_to_matrix(terms: list, n: int) -> np.ndarray:
-    """Convert list of PauliTerm objects to their matrix sum representation."""
-    total_matrix = np.zeros((2**n, 2**n), dtype=complex)
-    for term in terms:
-        pauli = decode_pauli(term.key, term.n)
-        total_matrix += term.coeff * pauli.to_matrix()
-    return total_matrix
 
 @pytest.mark.parametrize("gate_name", ["rxx", "ryy", "rzz"])
 @pytest.mark.parametrize("q1,q2", [(0, 1), (1, 0)])
@@ -72,7 +66,7 @@ def test_rxx_ryy_rzz_matrix_equivalence(gate_name, q1, q2, label, theta):
     matsum = pauli_terms_to_matrix(output_terms, 2)
     
     # Calculate expected result via direct matrix propagation
-    expected = U.conj().T @ pauli_matrix(label) @ U
+    expected = U.conj().T @ Pauli(label).to_matrix() @ U
     
     assert np.allclose(matsum, expected), f"Matrix mismatch for {gate_name}(θ={theta}) on {label}, qubits ({q1},{q2})"
 

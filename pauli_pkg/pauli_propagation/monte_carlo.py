@@ -12,10 +12,8 @@ from .gates       import QuantumGate
 from tqdm.notebook import tqdm
 from concurrent.futures import ProcessPoolExecutor, as_completed
 
-
 # Threshold for parallel processing and maximum number of worker processes
 _MAX_WORKERS = 8 # or os.cpu_count()
-
 
 class MonteCarlo:
     """
@@ -78,7 +76,7 @@ class MonteCarlo:
         -------
         Tuple[complex, int, int, List[bool]]
             (last_coeff_unbiased, last_key, n, weight_exceeded_flags)
-            - last_coeff_unbiased: 桅_纬 / |桅_纬|^2, so that E[last_coeff_unbiased * d_纬] = 危 桅_纬 d_纬
+            - last_coeff_unbiased: current_coeff / |current_coeff|^2, ensuring E[last_coeff_unbiased * d_current_coeff] = expected current_coeff d_current_coeff
             - last_key: final Pauli key
             - n: number of qubits
             - weight_exceeded_flags: booleans for weight thresholds
@@ -87,6 +85,7 @@ class MonteCarlo:
 
         current_key = init_key
         current_coeff = init_coeff
+
 
         # Track if weight exceeded [0,1,2,3,4,5,6] at any point
         weight_thresholds = [0, 1, 2, 3, 4, 5, 6]
@@ -125,7 +124,7 @@ class MonteCarlo:
                 if current_weight > threshold:
                     weight_exceeded_flags[i] = True
 
-        # Compute unbiased estimator: 桅_纬 / |桅_纬|^2
+        # Calculate the unbiased estimator: current_coeff / |current_coeff|^2
         p = abs(current_coeff)**2
         if p > 0:
             last_coeff_unbiased = current_coeff / p
@@ -156,16 +155,12 @@ class MonteCarlo:
         coeff_sqs : List[float]
             Coefficient squares for each sample
         """
-        sample_data = {
-            'sampled_last_paulis': sampled_last_paulis,
-            'weight_exceeded_details': weight_exceeded_details,
-            'last_pauli_weights': last_pauli_weights,
-            'coeff_sqs': coeff_sqs,
-            'qc_info': {
-                'num_qubits': self.n,
-                'circuit_depth': len(self.qc.data)
-            }
-        }
+        sample_data = {'sampled_last_paulis': sampled_last_paulis,
+                       'weight_exceeded_details': weight_exceeded_details,
+                       'last_pauli_weights': last_pauli_weights,
+                       'coeff_sqs': coeff_sqs,
+                       'qc_info': {'num_qubits': self.n,
+                                   'circuit_depth': len(self.qc.data)}}
         
         # Create directory if needed
         dir_path = os.path.dirname(sample_file)
@@ -210,8 +205,7 @@ class MonteCarlo:
                           M: int,
                           tol: float = 0,
                           sample_file: Optional[str] = None,
-                          load_existing: bool = False
-                         ) -> Tuple[List[PauliTerm], List[List[bool]], List[int], List[float]]:
+                          load_existing: bool = False) -> Tuple[List[PauliTerm], List[List[bool]], List[int], List[float]]:
         """
         Generate M Monte Carlo backtracking paths, only keeping the final PauliTerms.
         Always uses parallel processing for optimal performance.
@@ -316,8 +310,8 @@ class MonteCarlo:
             last_pauli_weights.extend(new_pauli_weights)
             coeff_sqs.extend(new_coeff_sqs)
 
-        # Save samples if requested
-        if sample_file:
+        # Save samples if requested and new samples were generated
+        if sample_file and new_samples_needed > 0:
             print(f"Saving {len(sampled_last_paulis)} samples to {sample_file}...")
             self._save_samples(sample_file, sampled_last_paulis, weight_exceeded_details, 
                              last_pauli_weights, coeff_sqs)
@@ -327,9 +321,9 @@ class MonteCarlo:
         self._weight_exceeded_details = weight_exceeded_details
         self._last_pauli_weights = last_pauli_weights
         self._coeff_sqs = coeff_sqs
+        self._init_coeff = init_term.coeff
 
         return sampled_last_paulis, weight_exceeded_details, last_pauli_weights, coeff_sqs
-
 
     def estimate_mse_for_truncation(self, 
                                   propagator,
@@ -363,7 +357,7 @@ class MonteCarlo:
         
         M = len(self._sampled_last_paulis)
         
-        # 1) Pre-compute d_i^2 for each path
+        # Pre-compute d_i^2 for each path
         d_list = []
         for pauli_term in self._sampled_last_paulis:
             # Create single-term list for each sampled Pauli term
@@ -372,55 +366,78 @@ class MonteCarlo:
             d_list.append(d_val * d_val)
         d_vals = np.array(d_list)
         
-        # 2) Convert weight exceeded flags and weight arrays
+        # Convert weight exceeded flags and weight arrays
         flags = np.array(self._weight_exceeded_details, dtype=bool)  # shape = (M, 7)
         weights = np.array(self._last_pauli_weights, dtype=int)      # shape = (M,)
         
-        # 3) Calculate MSE
-        results = {'cumulative': {},  # Cumulative MSE: weight > k
-                   'layer': {}}     # Layer MSE: weight == k
+        # Calculate MSE
+        results = {'MSE': {}}  # Cumulative MSE: weight > k
+                #    'layer': {}}     # Layer MSE: weight == k 这个东西没用，别动它 ！！！！！！！！！！！！！！！！！！！！！！！！！！！！垃圾
         
         # Cumulative MSE: all paths with weight > k
+        z_factor = abs(self._init_coeff)**2   # constant to ensure unbiased estimation
         for k in range(0, max_k + 1):
             if k < flags.shape[1]:
-                mse_cumulative = d_vals[flags[:, k]].sum() / M
-                results['cumulative'][k] = mse_cumulative
+                mse_cumulative = d_vals[flags[:, k]].sum() / M * z_factor
+                results['MSE'][k] = mse_cumulative
             else:
-                results['cumulative'][k] = 0.0
+                results['MSE'][k] = 0.0
         
-        # Layer MSE: paths with weight == k
-        for k in range(0, max_k + 1):
-            mask_eq = (weights == k)
-            mse_layer = d_vals[mask_eq].sum() / M
-            results['layer'][k] = mse_layer
+        # # Layer MSE: paths with weight == k
+        # for k in range(0, max_k + 1):
+        #     mask_eq = (weights == k)
+        #     mse_layer = d_vals[mask_eq].sum() / M * z_factor
+        #     results['layer'][k] = mse_layer
         
         return results
+
+    # def estimate_Z(args):
+    #     ops, init_key, init_coeff, n, tol = args
+    #     init_pauli_term = PauliTerm(init_coeff, init_key, n)
+
+        
+    #     for gate_name, qidx, extra in ops:
+    #         gate_func = QuantumGate.get(gate_name)
+
+    #         if extra:
+    #             out_terms = gate_func(init_pauli_term, *qidx, *extra)
+    #         else:
+    #             out_terms = gate_func(init_pauli_term, *qidx)
+    #         # ``out_terms`` is a list of ``PauliTerm`` objects.  The quantity
+    #         # ``Z`` is defined as the sum of squared magnitudes of the
+    #         # coefficients of all PauliTerms in ``out_terms``.
+
+    #         break
+
+    #     return Z
 
     # def print_mse_summary(self, 
     #                      mse_results: Dict[str, Dict[int, float]], 
     #                      max_k: int = 6) -> None:
     #     """
-    #     鎵撳嵃MSE缁撴灉鐨勬憳瑕併€?
-        
+    #     Print a human-readable summary of the Monte-Carlo estimated
+    #     mean-squared-error (MSE).
+    #
     #     Parameters
     #     ----------
     #     mse_results : Dict[str, Dict[int, float]]
-    #         estimate_mse_for_truncation鏂规硶杩斿洖鐨勭粨鏋?
+    #         Output produced by :py:meth:`estimate_mse_for_truncation`.
     #     max_k : int, optional
-    #         鏈€澶ф潈閲嶉槇鍊硷紝榛樿?や负6
+    #         Largest weight :math:`k` to be shown in the summary. Defaults to
+    #         ``6``.
     #     """
-    #     print("Monte Carlo MSE 浼拌?＄粨鏋?:")
+    #     print("Monte Carlo MSE summary:")
     #     print("=" * 50)
         
-    #     print("\n绱?绉疢SE (鏉冮噸 > k 鐨勮矾寰?):")
+    #     print("\nCumulative MSE (weight > k):")
     #     for k in range(0, max_k + 1):
     #         mse_val = mse_results['cumulative'].get(k, 0.0)
-    #         print(f"  鏉冮噸 > {k}: {mse_val:.6e}")
+    #         print(f"   weight > {k}: {mse_val:.6e}")
         
-    #     print("\n鍗曞眰MSE (鏉冮噸 == k 鐨勮矾寰?):")
+    #     print("\nLayer MSE (weight == k):")
     #     for k in range(0, max_k + 1):
     #         mse_val = mse_results['layer'].get(k, 0.0)
-    #         print(f"  鏉冮噸 == {k}: {mse_val:.6e}")
+    #         print(f"   weight == {k}: {mse_val:.6e}")
 
     # def get_sample_count(self) -> int:
     #     """

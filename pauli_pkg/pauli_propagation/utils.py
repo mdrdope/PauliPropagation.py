@@ -14,6 +14,7 @@ __all__ = [
     "random_su2",
     "random_state_label",
     "random_pauli_label",
+    "pauli_terms_to_matrix",
 ]
 
 def encode_pauli(p: np.typing.NDArray | "Pauli") -> int:
@@ -228,3 +229,34 @@ def random_pauli_label(n):
         pos = random.randrange(n)
         lbl = lbl[:pos] + random.choice("XYZ") + lbl[pos+1:]
     return lbl
+
+# -----------------------------------------------------------------------------
+# Helper utilities frequently used in unit tests
+# -----------------------------------------------------------------------------
+
+def pauli_terms_to_matrix(terms, n: int):
+    """Reconstruct ∑ᵢ αᵢ Pᵢ from a list of ``PauliTerm`` objects.
+
+    Parameters
+    ----------
+    terms : PauliTerm | list[PauliTerm]
+        Single ``PauliTerm`` or list thereof.
+    n : int
+        Number of qubits in the underlying operator.
+
+    Returns
+    -------
+    np.ndarray
+        Dense 2ⁿ × 2ⁿ matrix of the Pauli sum.
+    """
+    # Local import to avoid a hard dependency in core utils
+    from pauli_propagation.pauli_term import PauliTerm  # pylint: disable=import-outside-toplevel
+
+    if isinstance(terms, PauliTerm):
+        terms = [terms]
+
+    total = np.zeros((2 ** n, 2 ** n), dtype=complex)
+    for term in terms:
+        p = decode_pauli(term.key, term.n)
+        total += term.coeff * p.to_matrix()
+    return total
