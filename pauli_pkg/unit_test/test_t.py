@@ -41,7 +41,7 @@ def test_t_random_embedded(trial):
     """
     Embed T gate on a random qubit in 4-qubit Pauli, compare with full tensor product construction.
     """
-    num_qubits = 5
+    num_qubits = 6
     # Generate random 4-qubit Pauli label
     label = "".join(random.choice("IXYZ") for _ in range(num_qubits))
     q      = random.randrange(num_qubits)

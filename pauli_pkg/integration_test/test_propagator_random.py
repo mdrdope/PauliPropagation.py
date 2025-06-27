@@ -133,7 +133,7 @@ def test_random_consistency(trial):
     obs = PauliTerm(1.0, key, n)
 
     prop = PauliPropagator(qc)
-    layers = prop.propagate(obs, max_weight=None)
+    layers = prop.propagate(obs, max_weight=None, use_parallel=False)
     prop_ev = prop.expectation_pauli_sum(layers[-1], state_lbl)
 
     sv_ev = Statevector.from_label(state_lbl).evolve(qc).expectation_value(Pauli(pauli_lbl)).real

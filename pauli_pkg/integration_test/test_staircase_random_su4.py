@@ -35,7 +35,7 @@ def test_staircase_random_su4(nx, ny):
 
     # Propagate observable through circuit
     prop = PauliPropagator(qc)
-    layers = prop.propagate(init_term, max_weight=None)
+    layers = prop.propagate(init_term, max_weight=None, use_parallel=False)
     prop_exp = prop.expectation_pauli_sum(
         pauli_sum=layers[-1],
         product_label="+" * n)

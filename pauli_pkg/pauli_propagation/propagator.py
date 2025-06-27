@@ -170,7 +170,7 @@ class PauliPropagator:
                   observable: PauliTerm,
                   max_weight: int | None = None,
                   use_parallel: bool = False,
-                  tol: float = 1e-10,
+                  tol: float = 1e-12,
                  ) -> List[List[PauliTerm]]:
         """
         Propagate a Pauli observable through the circuit.
@@ -418,7 +418,7 @@ class PauliPropagator:
     #                    observable: PauliTerm,
     #                    max_weight: int | None = None,
     #                    use_parallel: bool = False,
-    #                    tol: float = 1e-10,
+    #                    tol: float = 1e-12,
     #                   ) -> List[Tuple[complex, int, int]]:
     #     """
     #     Fast propagation that returns only the final layer as tuples.

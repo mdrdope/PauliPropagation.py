@@ -160,7 +160,6 @@ def random_su2() -> np.ndarray:
     return np.array([[q3 + 1j*q2, q1 + 1j*q0],
                      [-q1 + 1j*q0, q3 - 1j*q2]], dtype=complex)
 
-# 缓存decode_pauli结果
 @lru_cache(maxsize=1024)
 def decode_pauli_cached(key: int, n: int) -> 'PauliOp':
     """

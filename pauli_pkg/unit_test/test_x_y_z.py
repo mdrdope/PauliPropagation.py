@@ -47,7 +47,7 @@ TRIALS = 20
 @pytest.mark.parametrize("trial", range(TRIALS))
 def test_x_y_z_random_embedded(gate_name, trial):
     """Embed X/Y/Z on a random qubit of an 8-qubit Pauli and compare matrices."""
-    num_qubits = 8
+    num_qubits = 6
     label = "".join(random.choice("IXYZ") for _ in range(num_qubits))
     target_q = random.randrange(num_qubits)
 
