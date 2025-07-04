@@ -166,7 +166,6 @@ The Jupyter notebooks provide interactive demonstrations and reproduce all figur
 3. **Setup IDE:**
    - Open the project in your IDE (like VScode)
    - Select the `dis_qc` environment as your Python interpreter
-   - Open `Tutorial_notebook.ipynb` to get started
 
 4. **Run Notebooks:**
    - Start with `Tutorial_notebook.ipynb` for a hands-on introduction.
