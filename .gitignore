@@ -29,4 +29,7 @@
 **/junk.ipynb 
 **/official_tutorial.ipynb
 
+# Ignore Cursor IDE workspace folder
+.cursor/
+
 PauliPropagation.jl-main

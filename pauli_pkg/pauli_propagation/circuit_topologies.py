@@ -87,7 +87,7 @@ def tfi_trotter_circuit(nqubits, nlayers, topology=None, start_with_ZZ=True, rx_
         rx_theta = np.pi / 2
         
     if rzz_theta is None:
-        rzz_theta = np.pi / 4
+        rzz_theta =   np.pi / 4
     
     qc = QuantumCircuit(nqubits)
     
@@ -159,7 +159,7 @@ def _staircase_edges(nx, ny):
     return uniq
 
 
-def staircasetopology2d_qc(nx, ny, L=1, seed=None):
+def staircasetopology2d_qc(nx, ny, L=1, seed=42):
     """
     Build a QuantumCircuit that places a fresh SU(4) gate on every edge
     of the 2-D staircase topology for an nx x ny grid (row-major indexing).
@@ -202,7 +202,7 @@ def staircasetopology2d_qc(nx, ny, L=1, seed=None):
     for layer in range(L):
         for k, (q1, q2) in enumerate(_staircase_edges(nx, ny)):  # 1-based
             mat = random_su4()
-            gate = UnitaryGate(mat, label=f"SU4_{layer}_{k}")   # create the gate
+            gate = UnitaryGate(mat, label=f"SU4")   # create the gate
             gate._name = "su4"                          # override its name
             qc.append(gate, [q1-1, q2-1])               # 0-based
     return qc

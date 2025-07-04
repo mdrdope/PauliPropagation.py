@@ -2,7 +2,6 @@
 requires = [
   "setuptools>=68",
   "wheel",
-  "Cython>=0.29.21",
   "numpy>=1.24",
 ]
 build-backend = "setuptools.build_meta"
@@ -19,9 +18,21 @@ authors = [
 ]
 dependencies = [
   "qiskit>=2.0",
+  "qiskit-ibm-runtime",
+  "qiskit[visualization]",
   "numpy>=1.24",
   "matplotlib>=3.7",
+  "jupyter",
+  "notebook",
+  "pytest",
+  "tqdm",
+  "ipywidgets",
+  "pylatexenc",
+  "ipykernel",
+  "tabulate",
 ]
+# NOTE: qiskit-aer should be installed via conda:
+#   conda install -c conda-forge qiskit-aer
 
 [project.optional-dependencies]
 dev = [

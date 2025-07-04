@@ -171,7 +171,8 @@ class PauliPropagator:
                   max_weight: int | None = None,
                   use_parallel: bool = False,
                   tol: float = 1e-12,
-                 ) -> List[List[PauliTerm]]:
+                  history: bool = True,
+                 ) -> Union[List[List[PauliTerm]], List[PauliTerm]]:
         """
         Propagate a Pauli observable through the circuit.
         
@@ -187,11 +188,19 @@ class PauliPropagator:
             Whether to use parallel processing
         tol : float
             Tolerance for discarding small coefficients
+        history : bool, optional
+            If True (default), the method returns a list containing the history
+            of PauliTerm layers for each depth of the (reversed) circuit.
+            If False, only the final layer (a single list of PauliTerm objects)
+            is returned, which can significantly reduce memory usage when the
+            full history is not required.
             
         Returns
         -------
-        List[List[PauliTerm]]
-            History of Pauli terms at each circuit layer
+        Union[List[List[PauliTerm]], List[PauliTerm]]
+            If ``history`` is True, a list of layers (each layer being a
+            list of PauliTerm objects) is returned. Otherwise, only the final
+            layer (list of PauliTerm) is returned.
         """
         if observable.n != self.n:
             raise ValueError("Observable qubit count mismatch")
@@ -199,8 +208,9 @@ class PauliPropagator:
         # Work with tuple representation internally
         current_terms_data = [(observable.coeff, observable.key, observable.n)]
         
-        # Store history as tuples - only convert to PauliTerm at the very end
-        history_tuples: List[List[Tuple[complex, int, int]]] = [[(observable.coeff, observable.key, observable.n)]]
+        # Optionally store history as tuples; skip to save memory if not needed
+        if history:
+            history_tuples: List[List[Tuple[complex, int, int]]] = [[(observable.coeff, observable.key, observable.n)]]
 
         # Prepare reverse circuit operations
         ops = []
@@ -252,8 +262,9 @@ class PauliPropagator:
                     if abs(coeff.real) > tol or abs(coeff.imag) > tol:
                         current_terms_data.append((coeff, key, self.n))
 
-                # Store as tuples in history
-                history_tuples.append(current_terms_data.copy())
+                # Store as tuples in history if requested
+                if history:
+                    history_tuples.append(current_terms_data.copy())
                 
                 # Early termination if no terms remain
                 if not current_terms_data:
@@ -263,12 +274,15 @@ class PauliPropagator:
             if executor:
                 executor.shutdown()
 
-        # ONLY at the very end: convert all tuple history to PauliTerm objects for user
-        # This is the ONLY place where PauliTerm objects are created in the entire propagation
-        history: List[List[PauliTerm]] = [self._tuples_to_pauli_terms(layer_tuples) 
-                                          for layer_tuples in history_tuples]
-
-        return history
+        # Convert and return results based on `history` flag
+        if history:
+            # Convert entire history
+            history: List[List[PauliTerm]] = [self._tuples_to_pauli_terms(layer_tuples)
+                                              for layer_tuples in history_tuples]
+            return history
+        else:
+            # Return only the final layer converted to PauliTerm objects
+            return self._tuples_to_pauli_terms(current_terms_data)
 
 
     def expectation_pauli_sum(self,

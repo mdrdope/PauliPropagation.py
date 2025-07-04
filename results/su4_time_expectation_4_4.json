@@ -1,0 +1,282 @@
+{
+  "L1_k1": {
+    "pauli_prop_serial": {
+      "time_sec": 0.02452826499938965,
+      "expectation": 0.11580034491627625
+    },
+    "pauli_prop_parallel": {
+      "time_sec": 0.02500176429748535,
+      "expectation": 0.11580034491627625
+    },
+    "statevector": {
+      "time_sec": 0.03274965286254883,
+      "expectation": 0.20731141913033796
+    }
+  },
+  "L1_k2": {
+    "pauli_prop_serial": {
+      "time_sec": 0.3179445266723633,
+      "expectation": 0.14276079917175347
+    },
+    "pauli_prop_parallel": {
+      "time_sec": 0.31615495681762695,
+      "expectation": 0.14276079917175347
+    },
+    "statevector": {
+      "time_sec": 0.028005123138427734,
+      "expectation": 0.20731141913033796
+    }
+  },
+  "L1_k3": {
+    "pauli_prop_serial": {
+      "time_sec": 3.82958722114563,
+      "expectation": 0.18637035797073453
+    },
+    "pauli_prop_parallel": {
+      "time_sec": 3.9665145874023438,
+      "expectation": 0.18637035797073456
+    },
+    "statevector": {
+      "time_sec": 0.02927541732788086,
+      "expectation": 0.20731141913033796
+    }
+  },
+  "L1_k4": {
+    "pauli_prop_serial": {
+      "time_sec": 34.19785213470459,
+      "expectation": 0.22161238502428815
+    },
+    "pauli_prop_parallel": {
+      "time_sec": 20.131470918655396,
+      "expectation": 0.22161238502428768
+    },
+    "statevector": {
+      "time_sec": 0.029048919677734375,
+      "expectation": 0.20731141913033796
+    }
+  },
+  "L2_k1": {
+    "pauli_prop_serial": {
+      "time_sec": 0.05154252052307129,
+      "expectation": 0.002878657237999584
+    },
+    "pauli_prop_parallel": {
+      "time_sec": 0.08051657676696777,
+      "expectation": 0.002878657237999584
+    },
+    "statevector": {
+      "time_sec": 0.0690011978149414,
+      "expectation": 0.015574462188427207
+    }
+  },
+  "L2_k2": {
+    "pauli_prop_serial": {
+      "time_sec": 1.10282301902771,
+      "expectation": 0.005964976940229565
+    },
+    "pauli_prop_parallel": {
+      "time_sec": 1.0645458698272705,
+      "expectation": 0.005964976940229565
+    },
+    "statevector": {
+      "time_sec": 0.05755257606506348,
+      "expectation": 0.015574462188427207
+    }
+  },
+  "L2_k3": {
+    "pauli_prop_serial": {
+      "time_sec": 17.080620288848877,
+      "expectation": 0.006556358423772459
+    },
+    "pauli_prop_parallel": {
+      "time_sec": 10.084878206253052,
+      "expectation": 0.006556358423772471
+    },
+    "statevector": {
+      "time_sec": 0.05601620674133301,
+      "expectation": 0.015574462188427207
+    }
+  },
+  "L2_k4": {
+    "pauli_prop_serial": {
+      "time_sec": 175.49490547180176,
+      "expectation": 0.010295079010180565
+    },
+    "pauli_prop_parallel": {
+      "time_sec": 93.45497107505798,
+      "expectation": 0.010295079010180558
+    },
+    "statevector": {
+      "time_sec": 0.05309915542602539,
+      "expectation": 0.015574462188427207
+    }
+  },
+  "L3_k1": {
+    "pauli_prop_serial": {
+      "time_sec": 0.07661271095275879,
+      "expectation": -0.003081586267050929
+    },
+    "pauli_prop_parallel": {
+      "time_sec": 0.0776216983795166,
+      "expectation": -0.003081586267050929
+    },
+    "statevector": {
+      "time_sec": 0.0797584056854248,
+      "expectation": 0.0103880233260991
+    }
+  },
+  "L3_k2": {
+    "pauli_prop_serial": {
+      "time_sec": 1.8437469005584717,
+      "expectation": 0.0014119921677771463
+    },
+    "pauli_prop_parallel": {
+      "time_sec": 1.8083746433258057,
+      "expectation": 0.0014119921677771463
+    },
+    "statevector": {
+      "time_sec": 0.07402229309082031,
+      "expectation": 0.0103880233260991
+    }
+  },
+  "L3_k3": {
+    "pauli_prop_serial": {
+      "time_sec": 28.52034091949463,
+      "expectation": 0.0020900032410544503
+    },
+    "pauli_prop_parallel": {
+      "time_sec": 15.80542516708374,
+      "expectation": 0.002090003241054437
+    },
+    "statevector": {
+      "time_sec": 0.08919763565063477,
+      "expectation": 0.0103880233260991
+    }
+  },
+  "L3_k4": {
+    "pauli_prop_serial": {
+      "time_sec": 316.3159704208374,
+      "expectation": 0.0034053666919759747
+    },
+    "pauli_prop_parallel": {
+      "time_sec": 166.78688216209412,
+      "expectation": 0.003405366691975963
+    },
+    "statevector": {
+      "time_sec": 0.08355307579040527,
+      "expectation": 0.0103880233260991
+    }
+  },
+  "L4_k1": {
+    "pauli_prop_serial": {
+      "time_sec": 0.09604334831237793,
+      "expectation": -0.0013241800486477385
+    },
+    "pauli_prop_parallel": {
+      "time_sec": 0.10403609275817871,
+      "expectation": -0.0013241800486477385
+    },
+    "statevector": {
+      "time_sec": 0.11055397987365723,
+      "expectation": 0.005176404179939767
+    }
+  },
+  "L4_k2": {
+    "pauli_prop_serial": {
+      "time_sec": 2.5368151664733887,
+      "expectation": -0.0006059579830435572
+    },
+    "pauli_prop_parallel": {
+      "time_sec": 2.4981184005737305,
+      "expectation": -0.0006059579830435572
+    },
+    "statevector": {
+      "time_sec": 0.10691452026367188,
+      "expectation": 0.005176404179939767
+    }
+  },
+  "L4_k3": {
+    "pauli_prop_serial": {
+      "time_sec": 40.76068830490112,
+      "expectation": 0.0002169679832802562
+    },
+    "pauli_prop_parallel": {
+      "time_sec": 22.162227869033813,
+      "expectation": 0.00021696798328025904
+    },
+    "statevector": {
+      "time_sec": 0.11611104011535645,
+      "expectation": 0.005176404179939767
+    }
+  },
+  "L4_k4": {
+    "pauli_prop_serial": {
+      "time_sec": 475.70022654533386,
+      "expectation": 0.0008190953138282432
+    },
+    "pauli_prop_parallel": {
+      "time_sec": 248.69317984580994,
+      "expectation": 0.0008190953138282448
+    },
+    "statevector": {
+      "time_sec": 0.10288071632385254,
+      "expectation": 0.005176404179939767
+    }
+  },
+  "L5_k1": {
+    "pauli_prop_serial": {
+      "time_sec": 0.1293468475341797,
+      "expectation": 0.0004953762047344671
+    },
+    "pauli_prop_parallel": {
+      "time_sec": 0.12707114219665527,
+      "expectation": 0.0004953762047344671
+    },
+    "statevector": {
+      "time_sec": 0.13338804244995117,
+      "expectation": 0.007707589956856578
+    }
+  },
+  "L5_k2": {
+    "pauli_prop_serial": {
+      "time_sec": 3.315840244293213,
+      "expectation": -0.0001188276170422392
+    },
+    "pauli_prop_parallel": {
+      "time_sec": 3.2802629470825195,
+      "expectation": -0.0001188276170422392
+    },
+    "statevector": {
+      "time_sec": 0.12914633750915527,
+      "expectation": 0.007707589956856578
+    }
+  },
+  "L5_k3": {
+    "pauli_prop_serial": {
+      "time_sec": 53.31524062156677,
+      "expectation": -0.0005022508854588734
+    },
+    "pauli_prop_parallel": {
+      "time_sec": 27.66643452644348,
+      "expectation": -0.0005022508854588728
+    },
+    "statevector": {
+      "time_sec": 0.16551852226257324,
+      "expectation": 0.007707589956856578
+    }
+  },
+  "L5_k4": {
+    "pauli_prop_serial": {
+      "time_sec": 584.4940066337585,
+      "expectation": -0.0003950346444642928
+    },
+    "pauli_prop_parallel": {
+      "time_sec": 301.17577958106995,
+      "expectation": -0.0003950346444642937
+    },
+    "statevector": {
+      "time_sec": 0.12566471099853516,
+      "expectation": 0.007707589956856578
+    }
+  }
+}

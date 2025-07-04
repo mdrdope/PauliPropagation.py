@@ -370,25 +370,36 @@ class MonteCarlo:
         flags = np.array(self._weight_exceeded_details, dtype=bool)  # shape = (M, 7)
         weights = np.array(self._last_pauli_weights, dtype=int)      # shape = (M,)
         
-        # Calculate MSE
-        results = {'MSE': {}}  # Cumulative MSE: weight > k
-                #    'layer': {}}     # Layer MSE: weight == k 这个东西没用，别动它 ！！！！！！！！！！！！！！！！！！！！！！！！！！！！垃圾
+        # Calculate MSE and unbiased variance
+        results = {'MSE': {}, 'Var': {}}  # Store mean and variance estimators
+        # Note: layer MSE can be re-enabled later if needed
         
-        # Cumulative MSE: all paths with weight > k
-        z_factor = abs(self._init_coeff)**2   # constant to ensure unbiased estimation
+        # Cumulative MSE and unbiased variance: all paths with weight > k
+        z_factor = abs(self._init_coeff)**2   # Z factor ensures unbiasedness
+
         for k in range(0, max_k + 1):
-            if k < flags.shape[1]:
-                mse_cumulative = d_vals[flags[:, k]].sum() / M * z_factor
-                results['MSE'][k] = mse_cumulative
-            else:
+            if k >= flags.shape[1]:
+                # No paths can exceed this weight threshold
                 results['MSE'][k] = 0.0
-        
-        # # Layer MSE: paths with weight == k
-        # for k in range(0, max_k + 1):
-        #     mask_eq = (weights == k)
-        #     mse_layer = d_vals[mask_eq].sum() / M * z_factor
-        #     results['layer'][k] = mse_layer
-        
+                results['Var'][k] = 0.0
+                continue
+
+            # Build the array X_i^{(k)} = Z * d_i^2 * 1_{weight>k}
+            X_k = np.where(flags[:, k], d_vals * z_factor, 0.0)
+
+            # Sample mean (unbiased MSE estimator)
+            bar_X = X_k.mean()
+            results['MSE'][k] = bar_X
+
+            # Unbiased sample variance estimator: 1/(M(M-1)) * Σ (X_i - bar_X)^2
+            if M > 1:
+                diff_sq_sum = np.sum((X_k - bar_X) ** 2)
+                var_unbiased = diff_sq_sum / (M * (M - 1))
+            else:
+                var_unbiased = 0.0
+
+            results['Var'][k] = var_unbiased
+
         return results
 
     # def estimate_Z(args):
@@ -408,8 +419,6 @@ class MonteCarlo:
     #         # coefficients of all PauliTerms in ``out_terms``.
 
     #         break
-
-    #     return Z
 
     # def print_mse_summary(self, 
     #                      mse_results: Dict[str, Dict[int, float]], 
