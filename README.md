@@ -139,6 +139,7 @@ The Jupyter notebooks provide interactive demonstrations and reproduce all figur
 - `TFI_IBM_real_data.ipynb`: Analysis of real IBM Quantum experimental data
 
 ## Mapping to Report
+- **Section 6**: `pauli_propagation/`
 - **Figure 4:** `Tutorial_notebook.ipynb`
 - **Section 7 & Appendix B:** `SU4_staircase_6_6_kak.ipynb`
 - **Section 8 & Appendix C:** `TFI_kicked_ising.ipynb`
@@ -159,7 +160,8 @@ The Jupyter notebooks provide interactive demonstrations and reproduce all figur
    cd pauli_pkg
    
    # Install the package in editable mode
-   pip install -e .
+   pip install --no-cache-dir -e .
+
    ```
 
 3. **Run Notebooks:**
