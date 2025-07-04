@@ -161,10 +161,14 @@ The Jupyter notebooks provide interactive demonstrations and reproduce all figur
    
    # Install the package in editable mode
    pip install --no-cache-dir -e .
-
    ```
 
-3. **Run Notebooks:**
+3. **Setup IDE:**
+   - Open the project in your IDE (like VScode)
+   - Select the `dis_qc` environment as your Python interpreter
+   - Open `Tutorial_notebook.ipynb` to get started
+
+4. **Run Notebooks:**
    - Start with `Tutorial_notebook.ipynb` for a hands-on introduction.
 
 ## Running Tests
