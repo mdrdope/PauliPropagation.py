@@ -8,7 +8,7 @@
 
 ## Overview
 
-This repository provides a Python implementation of the Pauli propagation algorithm for simulating quantum circuits on classical computers. The package enables efficient estimation of observable expectation values in large, deep quantum circuits, pushing the limits of classical simulation and providing a new baseline for benchmarking quantum advantage.
+This repository provides a Python implementation of the Pauli propagation algorithm (see Classically estimating observables of noiseless quantum circuits) for simulating quantum circuits on classical computers. The package enables efficient estimation of observable expectation values in large, deep quantum circuits, pushing the limits of classical simulation and providing a new baseline for benchmarking quantum advantage.
 
 ## Scientific Context
 
