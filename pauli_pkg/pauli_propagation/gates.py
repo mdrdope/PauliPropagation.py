@@ -1034,7 +1034,6 @@ def rxx_gate(pauli_term: PauliTerm, q1: int, q2: int, theta: float) -> List[Paul
 # Register simple parameter extractors for these rotation gates
 QuantumGate.register_param_extractor("rxx", lambda instruction: (instruction.operation.params[0],))
 
-
 @QuantumGate.register_gate("ryy")
 def ryy_gate(pauli_term: PauliTerm, q1: int, q2: int, theta: float) -> List[PauliTerm]:
     """Bit-mask Pauli propagation for RYY(θ)=exp(-i θ/2 Y⊗Y)."""

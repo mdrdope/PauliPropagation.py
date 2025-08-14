@@ -2,7 +2,7 @@
 
 # pauli_pkg/pauli_propagation/propagator.py
 import numpy as np
-from typing import List, Dict, Tuple, Set, Union
+from typing import List, Dict, Tuple, Set, Union, Sequence
 from qiskit import QuantumCircuit
 from .pauli_term  import PauliTerm
 from .utils       import weight_of_key
@@ -166,51 +166,188 @@ class PauliPropagator:
         """
         return [PauliTerm(coeff, key, n) for coeff, key, n in terms_data]
 
+    # def propagate(self,
+    #               observable: Union[PauliTerm, Sequence[PauliTerm]],
+    #               max_weight: int | None = None,
+    #               use_parallel: bool = False,
+    #               tol: float = 1e-12,
+    #               history: bool = True,
+    #              ) -> Union[List[List[PauliTerm]], List[PauliTerm]]:
+    #     """
+    #     Propagate a Pauli observable through the circuit.
+        
+    #     This method performs exact propagation of a Pauli observable through the circuit.
+        
+    #     Parameters
+    #     ----------
+    #     observable : PauliTerm
+    #         Initial Pauli observable to propagate
+    #     max_weight : int | None
+    #         Maximum weight of Pauli terms to keep (None for no limit)
+    #     use_parallel : bool
+    #         Whether to use parallel processing
+    #     tol : float
+    #         Tolerance for discarding small coefficients
+    #     history : bool, optional
+    #         If True (default), the method returns a list containing the history
+    #         of PauliTerm layers for each depth of the (reversed) circuit.
+    #         If False, only the final layer (a single list of PauliTerm objects)
+    #         is returned, which can significantly reduce memory usage when the
+    #         full history is not required.
+            
+    #     Returns
+    #     -------
+    #     Union[List[List[PauliTerm]], List[PauliTerm]]
+    #         If ``history`` is True, a list of layers (each layer being a
+    #         list of PauliTerm objects) is returned. Otherwise, only the final
+    #         layer (list of PauliTerm) is returned.
+    #     """
+    #     # if observable.n != self.n:
+    #     #     raise ValueError("Observable qubit count mismatch")
+
+    #     # Work with tuple representation internally
+    #     # current_terms_data = [(observable.coeff, observable.key, observable.n)]
+    #     if isinstance(observable, PauliTerm):
+    #         term_list = [observable]
+    #     else:
+    #         term_list = list(observable)
+    #         if not term_list:  # empty list check
+    #             raise ValueError("Observable list must not be empty")
+            
+    #     if any(t.n != self.n for t in term_list):
+    #         raise ValueError("Observable qubit count mismatch")
+
+    #     current_terms_data = [(t.coeff, t.key, t.n) for t in term_list]
+
+        
+    #     # Optionally store history as tuples; skip to save memory if not needed
+    #     if history:
+    #         history_tuples: list[list[tuple[complex, int, int]]] = [current_terms_data.copy()]
+
+    #     # Prepare reverse circuit operations
+    #     ops = []
+    #     for instr in reversed(self.qc.data):
+    #         gate_name = instr.operation.name
+    #         qidx = tuple(self.q2i[q] for q in instr.qubits)
+    #         extra = QuantumGate.extract_params(gate_name, instr)
+    #         ops.append((gate_name, qidx, extra))
+
+    #     # Set up parallel processing if requested
+    #     executor = ProcessPoolExecutor(max_workers=_MAX_WORKERS) if use_parallel else None
+    #     try:
+    #         for gate_name, qidx, extra_args in tqdm(ops, desc=f"Propagating, max weight: {max_weight}", total=len(ops)):
+    #         # for gate_name, qidx, extra_args in ops:
+                
+    #             # For small numbers of terms or if parallel is disabled, process sequentially
+    #             if not use_parallel or len(current_terms_data) < _PARALLEL_THRESHOLD:
+    #                 next_terms_data = _apply_gate_kernel_batch((current_terms_data, gate_name, qidx, extra_args))
+    #             else:
+    #                 # Split terms into chunks for parallel processing
+    #                 chunk_size = max(1, len(current_terms_data) // _MAX_WORKERS)
+    #                 chunks = [current_terms_data[i:i+chunk_size] 
+    #                         for i in range(0, len(current_terms_data), chunk_size)]
+                    
+    #                 # Process chunks in parallel
+    #                 future_to_chunk = {executor.submit(_apply_gate_kernel_batch, (chunk, gate_name, qidx, extra_args)): chunk 
+    #                                    for chunk in chunks}
+                    
+    #                 next_terms_data = []
+    #                 for future in as_completed(future_to_chunk):
+    #                     chunk_results = future.result()
+    #                     next_terms_data.extend(chunk_results)
+
+    #             # Combine terms with same keys and apply filters - ALL using tuples
+    #             key_to_coeff: Dict[int, complex] = {}
+                
+    #             for coeff, key, n in next_terms_data:
+    #                 # Apply filters BEFORE combining (more efficient)
+    #                 if max_weight is not None and weight_of_key(key, self.n) > max_weight:
+    #                     continue
+    #                 if abs(coeff.real) <= tol and abs(coeff.imag) <= tol:
+    #                     continue
+                    
+    #                 # Combine terms with same keys
+    #                 key_to_coeff[key] = key_to_coeff.get(key, 0.0) + coeff
+
+    #             # Filter out small coefficients and rebuild tuple list
+    #             current_terms_data = []
+    #             for key, coeff in key_to_coeff.items():
+    #                 if abs(coeff.real) > tol or abs(coeff.imag) > tol:
+    #                     current_terms_data.append((coeff, key, self.n))
+
+    #             # Store as tuples in history if requested
+    #             if history:
+    #                 history_tuples.append(current_terms_data.copy())
+                
+    #             # Early termination if no terms remain
+    #             if not current_terms_data:
+    #                 break
+
+    #     finally:
+    #         if executor:
+    #             executor.shutdown()
+
+    #     # Convert and return results based on `history` flag
+    #     if history:
+    #         # Convert entire history
+    #         history: List[List[PauliTerm]] = [self._tuples_to_pauli_terms(layer_tuples)
+    #                                           for layer_tuples in history_tuples]
+    #         return history
+    #     else:
+    #         # Return only the final layer converted to PauliTerm objects
+    #         return self._tuples_to_pauli_terms(current_terms_data)
+
     def propagate(self,
-                  observable: PauliTerm,
-                  max_weight: int | None = None,
-                  use_parallel: bool = False,
-                  tol: float = 1e-12,
-                  history: bool = True,
-                 ) -> Union[List[List[PauliTerm]], List[PauliTerm]]:
+                observable: Union[PauliTerm, Sequence[PauliTerm]],
+                max_weight: int | None = None,
+                use_parallel: bool = False,
+                tol: float = 1e-12,
+                history: bool = True,
+                show_progress: bool = True,  # NEW: toggle tqdm progress bar
+                ) -> Union[List[List[PauliTerm]], List[PauliTerm]]:
         """
         Propagate a Pauli observable through the circuit.
-        
+
         This method performs exact propagation of a Pauli observable through the circuit.
-        
+
         Parameters
         ----------
-        observable : PauliTerm
-            Initial Pauli observable to propagate
+        observable : PauliTerm or Sequence[PauliTerm]
+            Initial Pauli observable(s) to propagate.
         max_weight : int | None
-            Maximum weight of Pauli terms to keep (None for no limit)
+            Maximum weight of Pauli terms to keep (None for no limit).
         use_parallel : bool
-            Whether to use parallel processing
+            Whether to use parallel processing.
         tol : float
-            Tolerance for discarding small coefficients
+            Tolerance for discarding small coefficients.
         history : bool, optional
-            If True (default), the method returns a list containing the history
-            of PauliTerm layers for each depth of the (reversed) circuit.
-            If False, only the final layer (a single list of PauliTerm objects)
-            is returned, which can significantly reduce memory usage when the
-            full history is not required.
-            
+            If True (default), return the full per-depth propagation history.
+            If False, return only the final PauliTerm layer.
+        show_progress : bool, optional
+            If True (default), display a tqdm progress bar over circuit ops.
+            If False, run silently with no progress bar.
+
         Returns
         -------
         Union[List[List[PauliTerm]], List[PauliTerm]]
-            If ``history`` is True, a list of layers (each layer being a
-            list of PauliTerm objects) is returned. Otherwise, only the final
-            layer (list of PauliTerm) is returned.
+            If `history` is True, a list of layers (each a list of PauliTerm) is returned.
+            Otherwise, only the final layer (list of PauliTerm) is returned.
         """
-        if observable.n != self.n:
+        if isinstance(observable, PauliTerm):
+            term_list = [observable]
+        else:
+            term_list = list(observable)
+            if not term_list:
+                raise ValueError("Observable list must not be empty")
+
+        if any(t.n != self.n for t in term_list):
             raise ValueError("Observable qubit count mismatch")
 
-        # Work with tuple representation internally
-        current_terms_data = [(observable.coeff, observable.key, observable.n)]
-        
-        # Optionally store history as tuples; skip to save memory if not needed
+        current_terms_data = [(t.coeff, t.key, t.n) for t in term_list]
+
+        # Optionally store history as tuples to save memory if not needed
         if history:
-            history_tuples: List[List[Tuple[complex, int, int]]] = [[(observable.coeff, observable.key, observable.n)]]
+            history_tuples: list[list[tuple[complex, int, int]]] = [current_terms_data.copy()]
 
         # Prepare reverse circuit operations
         ops = []
@@ -220,69 +357,74 @@ class PauliPropagator:
             extra = QuantumGate.extract_params(gate_name, instr)
             ops.append((gate_name, qidx, extra))
 
-        # Set up parallel processing if requested
+        # Progress iterator: use tqdm only if requested and available
+        iterator = ops
+        _tqdm_obj = None
+        if show_progress:
+            try:
+                from tqdm.auto import tqdm as _tqdm
+                _tqdm_obj = _tqdm(ops,
+                                desc=f"Propagating, max weight: {max_weight}",
+                                total=len(ops))
+                iterator = _tqdm_obj
+            except Exception:
+                # Fall back silently if tqdm is unavailable
+                iterator = ops
+
         executor = ProcessPoolExecutor(max_workers=_MAX_WORKERS) if use_parallel else None
         try:
-            for gate_name, qidx, extra_args in tqdm(ops, desc=f"Propagating, max weight: {max_weight}", total=len(ops)):
-                
-                # For small numbers of terms or if parallel is disabled, process sequentially
+            for gate_name, qidx, extra_args in iterator:
+
                 if not use_parallel or len(current_terms_data) < _PARALLEL_THRESHOLD:
                     next_terms_data = _apply_gate_kernel_batch((current_terms_data, gate_name, qidx, extra_args))
                 else:
-                    # Split terms into chunks for parallel processing
                     chunk_size = max(1, len(current_terms_data) // _MAX_WORKERS)
-                    chunks = [current_terms_data[i:i+chunk_size] 
+                    chunks = [current_terms_data[i:i+chunk_size]
                             for i in range(0, len(current_terms_data), chunk_size)]
-                    
-                    # Process chunks in parallel
-                    future_to_chunk = {executor.submit(_apply_gate_kernel_batch, (chunk, gate_name, qidx, extra_args)): chunk 
-                                       for chunk in chunks}
-                    
+
+                    future_to_chunk = {executor.submit(_apply_gate_kernel_batch,
+                                                    (chunk, gate_name, qidx, extra_args)): chunk
+                                    for chunk in chunks}
+
                     next_terms_data = []
                     for future in as_completed(future_to_chunk):
                         chunk_results = future.result()
                         next_terms_data.extend(chunk_results)
 
-                # Combine terms with same keys and apply filters - ALL using tuples
                 key_to_coeff: Dict[int, complex] = {}
-                
+
                 for coeff, key, n in next_terms_data:
-                    # Apply filters BEFORE combining (more efficient)
+                    # Filter before combining
                     if max_weight is not None and weight_of_key(key, self.n) > max_weight:
                         continue
                     if abs(coeff.real) <= tol and abs(coeff.imag) <= tol:
                         continue
-                    
-                    # Combine terms with same keys
                     key_to_coeff[key] = key_to_coeff.get(key, 0.0) + coeff
 
-                # Filter out small coefficients and rebuild tuple list
                 current_terms_data = []
                 for key, coeff in key_to_coeff.items():
                     if abs(coeff.real) > tol or abs(coeff.imag) > tol:
                         current_terms_data.append((coeff, key, self.n))
 
-                # Store as tuples in history if requested
                 if history:
                     history_tuples.append(current_terms_data.copy())
-                
-                # Early termination if no terms remain
+
                 if not current_terms_data:
                     break
 
         finally:
             if executor:
                 executor.shutdown()
+            if _tqdm_obj is not None:
+                _tqdm_obj.close()
 
-        # Convert and return results based on `history` flag
         if history:
-            # Convert entire history
-            history: List[List[PauliTerm]] = [self._tuples_to_pauli_terms(layer_tuples)
-                                              for layer_tuples in history_tuples]
-            return history
+            history_out: List[List[PauliTerm]] = [self._tuples_to_pauli_terms(layer_tuples)
+                                                for layer_tuples in history_tuples]
+            return history_out
         else:
-            # Return only the final layer converted to PauliTerm objects
             return self._tuples_to_pauli_terms(current_terms_data)
+
 
 
     def expectation_pauli_sum(self,
