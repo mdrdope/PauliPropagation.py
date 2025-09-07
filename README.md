@@ -113,12 +113,16 @@ The `results/` directory contains all simulation outputs and processed experimen
 ```plaintext
 report/
 ├── report_ym432.pdf
+├── presentation_slides.pdf
+├── presentation_script.docx
 └── executive_summary_ym432.pdf
 ```
 
 Description:  
 The `report/` folder contains the complete project documentation.  
 - `report_ym432.pdf`: Full technical report with detailed methodology and results
+- `presentation_slides.pdf`: Slides used in final presentation
+- `presentation_script.docx`: Word by word script used in presentation 
 - `executive_summary_ym432.pdf`: Concise summary of key findings and scientific impact
 
 ### Jupyter Notebooks
